@@ -8,9 +8,11 @@ class ResNet18Model(BaseModel):
     
     def get_model(self) -> nn.Module:
         base_model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
+        # ResNet doesn't have 'features' attribute like VGG
+        # Remove the final classification layer and use all layers except fc
+        layers = list(base_model.children())[:-1]  # Remove final fc layer
         return nn.Sequential(
-            base_model.features,
-            nn.AdaptiveAvgPool2d((1, 1)),
+            *layers,
             nn.Flatten()
         )
     

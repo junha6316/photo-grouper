@@ -1,7 +1,7 @@
 import torch
 from PIL import Image
 import numpy as np
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 import hashlib
 from sklearn.decomposition import PCA
 from infra.cache_db import EmbeddingCache
@@ -46,6 +46,9 @@ class ImageEmbedder:
         # In-memory cache for current session
         self._embedding_cache = {}
         self._raw_embeddings_cache = {}
+        
+        # Try to load PCA model from cache on initialization
+        self._load_cached_pca_model()
     
     def _get_model_impl(self, model_type: str) -> BaseModel:
         """Get model implementation based on type."""
@@ -66,6 +69,17 @@ class ImageEmbedder:
     def _setup_transforms(self):
         """Setup image preprocessing transforms."""
         self.transform = self.model_impl.get_transforms()
+    
+    def _load_cached_pca_model(self):
+        """Try to load PCA model from cache on initialization."""
+        try:
+            cached_pca = self.db_cache.load_pca_model(self.model_name, self.pca_components)
+            if cached_pca is not None:
+                self.pca = cached_pca
+                self.pca_fitted = True
+        except Exception:
+            # If loading fails, just continue without cached PCA
+            pass
 
     def _get_raw_embedding(self, image_path: str) -> np.ndarray:
         """Extract raw model embedding without PCA."""
@@ -141,8 +155,19 @@ class ImageEmbedder:
         
         return all_embeddings
 
-    def fit_pca(self, image_paths: list, batch_size: int = 32):
-        """Fit PCA on a set of images using batch processing."""
+    def fit_pca(self, image_paths: list, batch_size: int = 32, force_refit: bool = False):
+        """
+        Fit PCA on a set of images using batch processing.
+        First tries to load from cache, then fits if needed.
+        """
+        # Try to load PCA model from cache first (unless forced to refit)
+        if not force_refit:
+            cached_pca = self.db_cache.load_pca_model(self.model_name, self.pca_components)
+            if cached_pca is not None:
+                self.pca = cached_pca
+                self.pca_fitted = True
+                return
+        
         print("Fitting PCA on image embeddings...")
         
         # Process images in batches
@@ -153,6 +178,9 @@ class ImageEmbedder:
         self.pca = PCA(n_components=self.pca_components)
         self.pca.fit(raw_embeddings_matrix)
         self.pca_fitted = True
+        
+        # Save PCA model to cache
+        self.db_cache.save_pca_model(self.pca, self.model_name, self.pca_components)
         
         explained_variance = np.sum(self.pca.explained_variance_ratio_)
         print(f"PCA fitted with {self.pca_components} components, "
@@ -200,20 +228,124 @@ class ImageEmbedder:
             self._embedding_cache[image_hash] = raw_embedding
             return raw_embedding
 
-    def get_embeddings_batch(self, image_paths: list) -> Dict[str, np.ndarray]:
+    def get_embeddings_batch(self, image_paths: list, batch_size: int = 32, progress_callback=None) -> Dict[str, np.ndarray]:
         """
-        Extract embeddings for multiple images.
+        Extract embeddings for multiple images using efficient batch processing.
         
         Args:
             image_paths: List of image file paths
+            batch_size: Number of images to process in each batch
+            progress_callback: Optional callback function for progress updates (index, total, path)
             
         Returns:
             Dictionary mapping image paths to embeddings
         """
         embeddings = {}
-        for path in image_paths:
-            embeddings[path] = self.get_embedding(path)
+        total_images = len(image_paths)
+        
+        # Process images in batches for better GPU utilization
+        for batch_start in range(0, len(image_paths), batch_size):
+            batch_end = min(batch_start + batch_size, len(image_paths))
+            batch_paths = image_paths[batch_start:batch_end]
+            
+            # Check cache first for this batch
+            batch_uncached = []
+            batch_uncached_indices = []
+            
+            for i, path in enumerate(batch_paths):
+                image_hash = self._get_image_hash(path)
+                
+                # Check memory cache first
+                if image_hash in self._embedding_cache:
+                    embeddings[path] = self._embedding_cache[image_hash]
+                    if progress_callback:
+                        progress_callback(batch_start + i, total_images, path)
+                    continue
+                
+                # Check database cache for PCA embedding
+                if self.pca_fitted and self.pca is not None:
+                    cached_pca_embedding = self.db_cache.get_embedding(
+                        path, f"{self.model_name}_pca"
+                    )
+                    if cached_pca_embedding is not None:
+                        self._embedding_cache[image_hash] = cached_pca_embedding
+                        embeddings[path] = cached_pca_embedding
+                        if progress_callback:
+                            progress_callback(batch_start + i, total_images, path)
+                        continue
+                
+                # Need to compute embedding
+                batch_uncached.append(path)
+                batch_uncached_indices.append(batch_start + i)
+            
+            # Process uncached images in batch if any
+            if batch_uncached:
+                self._process_uncached_batch(
+                    batch_uncached, batch_uncached_indices,
+                    embeddings, progress_callback, total_images)
+        
         return embeddings
+    
+    def _process_uncached_batch(self, batch_paths: list, batch_indices: list,
+                                embeddings: dict, progress_callback,
+                                total_images: int):
+        """Process a batch of uncached images efficiently."""
+        batch_tensors = []
+        valid_paths = []
+        
+        # Load and preprocess batch
+        for path in batch_paths:
+            try:
+                image = Image.open(path).convert('RGB')
+                tensor = self.transform(image)
+                batch_tensors.append(tensor)
+                valid_paths.append(path)
+            except Exception as e:
+                print(f"Error loading {path}: {e}")
+                # Use zero embedding for failed images
+                dim = self.pca_components if self.pca_fitted else self.feature_dim
+                embeddings[path] = np.zeros(dim, dtype=np.float32)
+        
+        if not batch_tensors:
+            return
+        
+        # Stack into single batch tensor and process
+        batch_tensor = torch.stack(batch_tensors).to(self.device)
+        
+        with torch.no_grad():
+            # Extract raw features
+            features = self.model(batch_tensor)
+            # Normalize each feature vector
+            features = torch.nn.functional.normalize(features, p=2, dim=1)
+            raw_embeddings = features.cpu().numpy()
+        
+        # Apply PCA and cache results
+        for i, path in enumerate(valid_paths):
+            raw_embedding = raw_embeddings[i]
+            image_hash = self._get_image_hash(path)
+            
+            # Cache raw embedding
+            self._raw_embeddings_cache[image_hash] = raw_embedding
+            self.db_cache.save_embedding(path, raw_embedding, f"{self.model_name}_raw")
+            
+            # Apply PCA if fitted
+            if self.pca_fitted and self.pca is not None:
+                pca_embedding = self.pca.transform([raw_embedding])[0]
+                # L2 normalize the PCA result
+                pca_embedding = pca_embedding / (np.linalg.norm(pca_embedding) + 1e-8)
+                
+                # Cache PCA embedding
+                self._embedding_cache[image_hash] = pca_embedding
+                self.db_cache.save_embedding(path, pca_embedding, f"{self.model_name}_pca")
+                embeddings[path] = pca_embedding
+            else:
+                self._embedding_cache[image_hash] = raw_embedding
+                embeddings[path] = raw_embedding
+            
+            # Update progress
+            if progress_callback:
+                batch_idx = batch_indices[valid_paths.index(path)]
+                progress_callback(batch_idx, total_images, path)
 
     def get_cache_stats(self) -> dict:
         """Get cache statistics."""
@@ -223,12 +355,19 @@ class ImageEmbedder:
         return stats
 
     def clear_cache(self, model_name: str = None) -> int:
-        """Clear cache entries."""
+        """Clear cache entries including PCA models."""
         # Clear memory caches
         if model_name is None or model_name == f"{self.model_name}_raw":
             self._raw_embeddings_cache.clear()
         if model_name is None or model_name == f"{self.model_name}_pca":
             self._embedding_cache.clear()
+        
+        # Clear PCA cache if clearing all or this model
+        if model_name is None or model_name == self.model_name:
+            self.db_cache.clear_pca_cache(self.model_name)
+            # Reset PCA state
+            self.pca = None
+            self.pca_fitted = False
         
         # Clear database cache
         return self.db_cache.clear_cache(model_name)
@@ -240,5 +379,5 @@ class ImageEmbedder:
             stat = os.stat(image_path)
             hash_string = f"{image_path}_{stat.st_mtime}_{stat.st_size}"
             return hashlib.md5(hash_string.encode()).hexdigest()
-        except:
+        except Exception:
             return hashlib.md5(image_path.encode()).hexdigest()

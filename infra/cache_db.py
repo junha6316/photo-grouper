@@ -563,3 +563,151 @@ class EmbeddingCache:
                 
         except Exception:
             return False
+    
+    # PCA Model caching methods
+    
+    def save_pca_model(self, pca_model, model_name: str, pca_components: int) -> bool:
+        """
+        Save PCA model to cache.
+        
+        Args:
+            pca_model: Fitted PCA model from sklearn
+            model_name: Base model name (e.g., 'resnet18', 'vgg16')
+            pca_components: Number of PCA components
+            
+        Returns:
+            True if saved successfully, False otherwise
+        """
+        import pickle
+        
+        try:
+            # Serialize PCA model
+            pca_bytes = pickle.dumps(pca_model)
+            pca_key = f"{model_name}_pca_{pca_components}"
+            
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Create PCA models table if it doesn't exist
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS pca_models (
+                        model_key TEXT PRIMARY KEY,
+                        model_name TEXT NOT NULL,
+                        pca_components INTEGER NOT NULL,
+                        pca_data BLOB NOT NULL,
+                        explained_variance REAL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                
+                # Calculate explained variance
+                explained_variance = float(np.sum(pca_model.explained_variance_ratio_))
+                
+                cursor.execute("""
+                    INSERT OR REPLACE INTO pca_models 
+                    (model_key, model_name, pca_components, pca_data, explained_variance)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (pca_key, model_name, pca_components, pca_bytes, explained_variance))
+                
+                conn.commit()
+                return True
+                
+        except Exception as e:
+            print(f"Error saving PCA model: {e}")
+            return False
+    
+    def load_pca_model(self, model_name: str, pca_components: int):
+        """
+        Load PCA model from cache.
+        
+        Args:
+            model_name: Base model name (e.g., 'resnet18', 'vgg16')
+            pca_components: Number of PCA components
+            
+        Returns:
+            PCA model or None if not found
+        """
+        import pickle
+        
+        try:
+            pca_key = f"{model_name}_pca_{pca_components}"
+            
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT pca_data, explained_variance 
+                    FROM pca_models 
+                    WHERE model_key = ?
+                """, (pca_key,))
+                
+                result = cursor.fetchone()
+                if result is None:
+                    return None
+                
+                # Deserialize PCA model
+                pca_model = pickle.loads(result['pca_data'])
+                explained_variance = result['explained_variance']
+                
+                print(f"Loaded cached PCA model for {model_name} "
+                      f"({pca_components} components, "
+                      f"explaining {explained_variance:.3f} of the variance)")
+                
+                return pca_model
+                
+        except Exception as e:
+            print(f"Error loading PCA model: {e}")
+            return None
+    
+    def has_sufficient_pca_embeddings(self, model_name: str, min_count: int = 100) -> bool:
+        """
+        Check if we have enough PCA embeddings cached to skip PCA fitting.
+        
+        Args:
+            model_name: Base model name
+            min_count: Minimum number of PCA embeddings required
+            
+        Returns:
+            True if we have enough PCA embeddings
+        """
+        try:
+            pca_model_key = f"{model_name}_pca"
+            
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT COUNT(*) as count 
+                    FROM embeddings 
+                    WHERE model_name = ?
+                """, (pca_model_key,))
+                
+                result = cursor.fetchone()
+                count = result['count'] if result else 0
+                
+                return count >= min_count
+                
+        except Exception:
+            return False
+    
+    def clear_pca_cache(self, model_name: str = None) -> int:
+        """
+        Clear PCA model cache.
+        
+        Args:
+            model_name: If specified, only clear for this model
+            
+        Returns:
+            Number of entries removed
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                if model_name:
+                    cursor.execute("DELETE FROM pca_models WHERE model_name = ?", (model_name,))
+                else:
+                    cursor.execute("DELETE FROM pca_models")
+                
+                conn.commit()
+                return cursor.rowcount
+        except Exception:
+            return 0
