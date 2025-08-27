@@ -108,16 +108,12 @@ class ImageEmbedder:
             # Return zero vector for failed images with correct dimensions
             return np.zeros(self.feature_dim, dtype=np.float32)
     
-    def fit_pca(self, image_paths: list):
-        """Fit PCA on a set of images."""
+    def fit_pca(self, image_paths: list, batch_size: int = 32):
+        """Fit PCA on a set of images using batch processing."""
         print("Fitting PCA on image embeddings...")
-        raw_embeddings = []
         
-        for i, path in enumerate(image_paths):
-            if i % 10 == 0:
-                print(f"Processing image {i+1}/{len(image_paths)} for PCA fitting...")
-            raw_embedding = self._get_raw_embedding(path)
-            raw_embeddings.append(raw_embedding)
+        # Process images in batches
+        raw_embeddings = self._get_raw_embeddings_batch(image_paths, batch_size)
         
         # Fit PCA
         raw_embeddings_matrix = np.array(raw_embeddings)
@@ -211,3 +207,36 @@ class ImageEmbedder:
             return hashlib.md5(hash_string.encode()).hexdigest()
         except:
             return hashlib.md5(image_path.encode()).hexdigest()
+        
+    def _get_raw_embeddings_batch(self, image_paths: list, batch_size: int = 32) -> list:
+        """Process multiple images in batches for better GPU utilization."""
+        all_embeddings = []
+        from tqdm import tqdm
+        
+        for i in tqdm(range(0, len(image_paths), batch_size)):
+            batch_paths = image_paths[i:i + batch_size]
+            batch_tensors = []
+            
+            # Load and preprocess batch
+            for path in batch_paths:
+                try:
+                    image = Image.open(path).convert('RGB')
+                    tensor = self.transform(image)
+                    batch_tensors.append(tensor)
+                except Exception as e:
+                    print(f"Error loading {path}: {e}")
+                    batch_tensors.append(torch.zeros(3, 224, 224))
+            
+            # Stack into single batch tensor
+            batch_tensor = torch.stack(batch_tensors).to(self.device)
+            
+            # Process batch
+            with torch.no_grad():
+                features = self.model(batch_tensor)
+                # Normalize each feature vector
+                features = torch.nn.functional.normalize(features, p=2, dim=1)
+                batch_embeddings = features.cpu().numpy()
+            
+            all_embeddings.extend(batch_embeddings)
+        
+        return all_embeddings
