@@ -29,3 +29,4 @@ class VGG16Model(BaseModel):
     
     def get_model_name(self) -> str:
         return "vgg16"
+

@@ -25,3 +25,4 @@ class BaseModel(ABC):
     def get_model_name(self) -> str:
         """Return the model name for caching."""
         pass
+

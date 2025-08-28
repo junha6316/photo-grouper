@@ -5,7 +5,7 @@ from typing import Dict, Optional
 import hashlib
 from sklearn.decomposition import PCA
 from infra.cache_db import EmbeddingCache
-from .models import BaseModel, VGG16Model, ResNet18Model
+from .models import BaseModel, VGG16Model, ResNet18Model, MobileNetV3SmallModel
 
 # Initialize HEIF support if available
 try:
@@ -19,12 +19,12 @@ except ImportError:
 
 
 class ImageEmbedder:
-    def __init__(self, model_type: str = "resnet18", device: Optional[str] = None, pca_components: int = 512):
+    def __init__(self, model_type: str = "mobilenetv3_small", device: Optional[str] = None, pca_components: int = 512):
         """
         Initialize the embedder with specified model type.
         
         Args:
-            model_type: Type of model to use ("vgg16", "resnet18")
+            model_type: Type of model to use ("vgg16", "resnet18", "mobilenetv3_small")
             device: PyTorch device ('cuda', 'cpu', or None for auto)
             pca_components: Number of PCA components
         """
@@ -56,6 +56,9 @@ class ImageEmbedder:
             return VGG16Model()
         elif model_type == "resnet18":
             return ResNet18Model()
+        elif model_type == "mobilenetv3_small":
+            print("Using MobileNetV3-Small model")
+            return MobileNetV3SmallModel()
         else:
             raise ValueError(f"Unsupported model type: {model_type}")
     
