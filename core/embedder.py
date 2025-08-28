@@ -126,6 +126,48 @@ class ImageEmbedder:
             # Return zero vector for failed images with correct dimensions
             return np.zeros(self.feature_dim, dtype=np.float32)
 
+    def _extract_raw_embeddings_batch(self, image_paths: list) -> tuple[list, list]:
+        """
+        Extract raw embeddings for a batch of images.
+        
+        Returns:
+            tuple: (embeddings_list, valid_paths_list) - only valid images are included
+        """
+        batch_tensors = []
+        valid_paths = []
+        
+        # Load and preprocess batch using ThreadPoolExecutor for efficiency
+        def _load_transform_image(path: str) -> tuple[torch.Tensor, str]:
+            try:
+                image = Image.open(path).convert('RGB')
+                tensor = self.transform(image)
+                return tensor, path
+            except Exception as e:
+                print(f"Error loading {path}: {e}")
+                return None, path
+        
+        with ThreadPoolExecutor(max_workers=16) as executor:
+            futures = [executor.submit(_load_transform_image, path) for path in image_paths]
+            for future in as_completed(futures):
+                tensor, path = future.result()
+                if tensor is not None:
+                    batch_tensors.append(tensor)
+                    valid_paths.append(path)
+        
+        if not batch_tensors:
+            return [], []
+        
+        # Stack into single batch tensor and extract features
+        batch_tensor = torch.stack(batch_tensors).to(self.device)
+        
+        with torch.no_grad():
+            features = self.model(batch_tensor)
+            # Normalize each feature vector
+            features = torch.nn.functional.normalize(features, p=2, dim=1)
+            embeddings = features.cpu().numpy()
+        
+        return embeddings, valid_paths
+
     def _get_raw_embeddings_batch(self, image_paths: list, batch_size: int = 32) -> list:
         """Process multiple images in batches for better GPU utilization."""
         all_embeddings = []
@@ -133,29 +175,19 @@ class ImageEmbedder:
         
         for i in tqdm(range(0, len(image_paths), batch_size)):
             batch_paths = image_paths[i:i + batch_size]
-            batch_tensors = []
+            batch_embeddings, valid_paths = self._extract_raw_embeddings_batch(batch_paths)
             
-            # Load and preprocess batch
-            for path in batch_paths:
-                try:
-                    image = Image.open(path).convert('RGB')
-                    tensor = self.transform(image)
-                    batch_tensors.append(tensor)
-                except Exception as e:
-                    print(f"Error loading {path}: {e}")
-                    batch_tensors.append(torch.zeros(3, 224, 224))
+            # Convert numpy array to list for consistent interface
+            if len(batch_embeddings) > 0:
+                batch_embeddings_list = batch_embeddings.tolist()
+            else:
+                batch_embeddings_list = []
             
-            # Stack into single batch tensor
-            batch_tensor = torch.stack(batch_tensors).to(self.device)
+            # Handle failed images by adding zero vectors
+            while len(batch_embeddings_list) < len(batch_paths):
+                batch_embeddings_list.append(np.zeros(self.feature_dim, dtype=np.float32).tolist())
             
-            # Process batch
-            with torch.no_grad():
-                features = self.model(batch_tensor)
-                # Normalize each feature vector
-                features = torch.nn.functional.normalize(features, p=2, dim=1)
-                batch_embeddings = features.cpu().numpy()
-            
-            all_embeddings.extend(batch_embeddings)
+            all_embeddings.extend(batch_embeddings_list)
         
         return all_embeddings
 
@@ -294,44 +326,16 @@ class ImageEmbedder:
                                 embeddings: dict, progress_callback,
                                 total_images: int):
         """Process a batch of uncached images efficiently."""
-        batch_tensors = []
-        valid_paths = []
+        # Use the unified batch processing method
+        raw_embeddings, valid_paths = self._extract_raw_embeddings_batch(batch_paths)
         
-        # Load and preprocess batch
-
-        def _load_transform_image(path: str) -> torch.Tensor:
-            try:
-                image = Image.open(path).convert('RGB')
-                tensor = self.transform(image)
-                return tensor, path
-            except Exception as e:
-                print(f"Error loading {path}: {e}")
-                return None, path
-        with ThreadPoolExecutor(max_workers=16) as executor:
-            futures = [executor.submit(_load_transform_image, path) for path in batch_paths]
-            for future in as_completed(futures):
-                tensor, path = future.result()
-                if tensor is not None:
-                    batch_tensors.append(tensor)
-                    valid_paths.append(path)
-                else:
-                    dim = self.pca_components if self.pca_fitted else self.feature_dim
-                    embeddings[path] = np.zeros(dim, dtype=np.float32)
+        # Handle failed images
+        for path in batch_paths:
+            if path not in valid_paths:
+                dim = self.pca_components if self.pca_fitted else self.feature_dim
+                embeddings[path] = np.zeros(dim, dtype=np.float32)
         
-        if not batch_tensors:
-            return
-        
-        # Stack into single batch tensor and process
-        batch_tensor = torch.stack(batch_tensors).to(self.device)
-        
-        with torch.no_grad():
-            # Extract raw features
-            features = self.model(batch_tensor)
-            # Normalize each feature vector
-            features = torch.nn.functional.normalize(features, p=2, dim=1)
-            raw_embeddings = features.cpu().numpy()
-        
-        # Apply PCA and cache results
+        # Apply PCA and cache results for valid images
         for i, path in enumerate(valid_paths):
             raw_embedding = raw_embeddings[i]
             image_hash = self._get_image_hash(path)
