@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import torch
 from PIL import Image
 import numpy as np
@@ -297,17 +298,25 @@ class ImageEmbedder:
         valid_paths = []
         
         # Load and preprocess batch
-        for path in batch_paths:
+
+        def _load_transform_image(path: str) -> torch.Tensor:
             try:
                 image = Image.open(path).convert('RGB')
                 tensor = self.transform(image)
-                batch_tensors.append(tensor)
-                valid_paths.append(path)
+                return tensor, path
             except Exception as e:
                 print(f"Error loading {path}: {e}")
-                # Use zero embedding for failed images
-                dim = self.pca_components if self.pca_fitted else self.feature_dim
-                embeddings[path] = np.zeros(dim, dtype=np.float32)
+                return None, path
+        with ThreadPoolExecutor(max_workers=16) as executor:
+            futures = [executor.submit(_load_transform_image, path) for path in batch_paths]
+            for future in as_completed(futures):
+                tensor, path = future.result()
+                if tensor is not None:
+                    batch_tensors.append(tensor)
+                    valid_paths.append(path)
+                else:
+                    dim = self.pca_components if self.pca_fitted else self.feature_dim
+                    embeddings[path] = np.zeros(dim, dtype=np.float32)
         
         if not batch_tensors:
             return
