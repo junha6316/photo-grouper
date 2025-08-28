@@ -222,47 +222,6 @@ class ImageEmbedder:
         print(f"PCA fitted with {self.pca_components} components, "
               f"explaining {explained_variance:.3f} of the variance")
 
-    def get_embedding(self, image_path: str) -> np.ndarray:
-        """
-        Extract PCA-reduced embedding for a single image.
-        
-        Args:
-            image_path: Path to the image file
-            
-        Returns:
-            Normalized PCA-reduced embedding vector
-        """
-        # Check in-memory cache first
-        image_hash = self._get_image_hash(image_path)
-        if image_hash in self._embedding_cache:
-            return self._embedding_cache[image_hash]
-        
-        # If PCA is fitted, check database cache for PCA embedding
-        if self.pca_fitted and self.pca is not None:
-            cached_pca_embedding = self.db_cache.get_embedding(
-                image_path, f"{self.model_name}_pca"
-            )
-            if cached_pca_embedding is not None:
-                self._embedding_cache[image_hash] = cached_pca_embedding
-                return cached_pca_embedding
-        
-        # Get raw embedding
-        raw_embedding = self._get_raw_embedding(image_path)
-        
-        # Apply PCA if fitted
-        if self.pca_fitted and self.pca is not None:
-            pca_embedding = self.pca.transform([raw_embedding])[0]
-            # L2 normalize the PCA result
-            pca_embedding = pca_embedding / (np.linalg.norm(pca_embedding) + 1e-8)
-            
-            # Cache PCA embedding in both memory and database
-            self._embedding_cache[image_hash] = pca_embedding
-            self.db_cache.save_embedding(image_path, pca_embedding, f"{self.model_name}_pca")
-            return pca_embedding
-        else:
-            # If PCA not fitted, return raw embedding
-            self._embedding_cache[image_hash] = raw_embedding
-            return raw_embedding
 
     def get_embeddings_batch(self, image_paths: list, batch_size: int = 32, progress_callback=None) -> Dict[str, np.ndarray]:
         """
