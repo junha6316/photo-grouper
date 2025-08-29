@@ -230,15 +230,16 @@ class ImageEmbedder:
         Args:
             image_paths: List of image file paths
             batch_size: Number of images to process in each batch
-            progress_callback: Optional callback function for progress updates (index, total, path)
+            progress_callback: Optional callback function for progress updates (index, total, path, eta_seconds)
             
         Returns:
             Dictionary mapping image paths to embeddings
         """
         embeddings = {}
         total_images = len(image_paths)
-        
         # Process images in batches for better GPU utilization
+        import time
+        start_time = time.time()
         for batch_start in range(0, len(image_paths), batch_size):
             batch_end = min(batch_start + batch_size, len(image_paths))
             batch_paths = image_paths[batch_start:batch_end]
@@ -254,7 +255,12 @@ class ImageEmbedder:
                 if image_hash in self._embedding_cache:
                     embeddings[path] = self._embedding_cache[image_hash]
                     if progress_callback:
-                        progress_callback(batch_start + i, total_images, path)
+                        current_idx = batch_start + i
+                        elapsed = time.time() - start_time
+                        eta_seconds = None
+                        if current_idx > 0:
+                            eta_seconds = (elapsed / current_idx) * (total_images - current_idx)
+                        progress_callback(current_idx, total_images, path, eta_seconds)
                     continue
                 
                 # Check database cache for PCA embedding
@@ -266,7 +272,12 @@ class ImageEmbedder:
                         self._embedding_cache[image_hash] = cached_pca_embedding
                         embeddings[path] = cached_pca_embedding
                         if progress_callback:
-                            progress_callback(batch_start + i, total_images, path)
+                            current_idx = batch_start + i
+                            elapsed = time.time() - start_time
+                            eta_seconds = None
+                            if current_idx > 0:
+                                eta_seconds = (elapsed / current_idx) * (total_images - current_idx)
+                            progress_callback(current_idx, total_images, path, eta_seconds)
                         continue
                 
                 # Need to compute embedding
@@ -277,13 +288,13 @@ class ImageEmbedder:
             if batch_uncached:
                 self._process_uncached_batch(
                     batch_uncached, batch_uncached_indices,
-                    embeddings, progress_callback, total_images)
+                    embeddings, progress_callback, total_images, start_time)
         
         return embeddings
     
     def _process_uncached_batch(self, batch_paths: list, batch_indices: list,
                                 embeddings: dict, progress_callback,
-                                total_images: int):
+                                total_images: int, start_time: float):
         """Process a batch of uncached images efficiently."""
         # Use the unified batch processing method
         raw_embeddings, valid_paths = self._extract_raw_embeddings_batch(batch_paths)
@@ -312,15 +323,20 @@ class ImageEmbedder:
                 # Cache PCA embedding
                 self._embedding_cache[image_hash] = pca_embedding
                 self.db_cache.save_embedding(path, pca_embedding, f"{self.model_name}_pca")
-                embeddings[path] = pca_embedding
+                embeddings[path] = raw_embedding
             else:
                 self._embedding_cache[image_hash] = raw_embedding
                 embeddings[path] = raw_embedding
             
             # Update progress
             if progress_callback:
+                import time
                 batch_idx = batch_indices[valid_paths.index(path)]
-                progress_callback(batch_idx, total_images, path)
+                elapsed = time.time() - start_time
+                eta_seconds = None
+                if batch_idx > 0:
+                    eta_seconds = (elapsed / batch_idx) * (total_images - batch_idx)
+                progress_callback(batch_idx, total_images, path, eta_seconds)
 
     def get_cache_stats(self) -> dict:
         """Get cache statistics."""

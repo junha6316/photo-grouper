@@ -41,27 +41,33 @@ class ProcessingThread(QThread):
             self.progress_updated.emit(15, "Initializing embedder...")
             embedder = ImageEmbedder()
             
-            # Step 3: Fit PCA (skip if already have enough cached PCA embeddings)
-            # Check if we have sufficient PCA embeddings cached
-            if embedder.db_cache.has_sufficient_pca_embeddings(embedder.model_name, min_count=100):
-                self.progress_updated.emit(25, "Loading cached PCA model...")
-                # Try to load cached PCA model
-                embedder.fit_pca([], force_refit=False)  # Just loads from cache
-            else:
-                self.progress_updated.emit(20, "Fitting PCA...")
-                # Use all images for PCA fitting (or subset if too many)
-                pca_sample = image_paths[:min(1000, len(image_paths))]
-                embedder.fit_pca(pca_sample)
+            # # Step 3: Fit PCA (skip if already have enough cached PCA embeddings), pca 하면
+            # # Check if we have sufficient PCA embeddings cached
+            # if embedder.db_cache.has_sufficient_pca_embeddings(embedder.model_name, min_count=100):
+            #     self.progress_updated.emit(25, "Loading cached PCA model...")
+            #     # Try to load cached PCA model
+            #     embedder.fit_pca([], force_refit=False)  # Just loads from cache
+            # else:
+            #     self.progress_updated.emit(20, "Fitting PCA...")
+            #     # Use all images for PCA fitting (or subset if too many)
+            #     pca_sample = image_paths[:min(1000, len(image_paths))]
+            #     embedder.fit_pca(pca_sample)
             
             # Step 4: Extract PCA embeddings using efficient batch processing
-            def progress_callback(current_idx: int, total: int, current_path: str):
+            def progress_callback(current_idx: int, total: int, current_path: str, eta_seconds=None):
                 progress = 30 + int(50 * current_idx / total)  # 30-80%
-                self.progress_updated.emit(
-                    progress, f"Extracting features {current_idx+1}/{total}")
+                message = f"Extracting features {current_idx+1}/{total}"
+                if eta_seconds is not None and eta_seconds > 0:
+                    eta_min, eta_sec = divmod(int(eta_seconds), 60)
+                    if eta_min > 0:
+                        message += f" (ETA: {eta_min}m {eta_sec}s)"
+                    else:
+                        message += f" (Estimated time: {eta_sec}s)"
+                self.progress_updated.emit(progress, message)
             
             # Use batch processing for much better performance
             embeddings = embedder.get_embeddings_batch(
-                image_paths, batch_size=16, progress_callback=progress_callback)
+                image_paths, batch_size=32, progress_callback=progress_callback)
             
             # Show cache stats
             cache_stats = embedder.get_cache_stats()
