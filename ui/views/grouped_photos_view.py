@@ -35,10 +35,10 @@ class GroupedPhotosView(QWidget):
         
         layout.addWidget(self.scroll_area)
     
-    def set_groups(self, groups: List[List[str]], min_display_size: int = 2):
+    def set_groups(self, groups: List[List[str]], min_display_size: int = 2, similarities: List[float] = None):
         """Set the photo groups to display."""
         self.current_groups = groups
-        self.preview_panel.display_groups(groups, min_display_size)
+        self.preview_panel.display_groups(groups, min_display_size, similarities)
     
     def clear(self):
         """Clear the display."""

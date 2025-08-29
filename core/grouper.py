@@ -1,3 +1,4 @@
+import random
 import numpy as np
 import os
 from sklearn.metrics.pairwise import cosine_similarity
@@ -14,28 +15,6 @@ except ImportError:
     FAISS_AVAILABLE = False
     print("FAISS not available, using scikit-learn for similarity search")
 
-class UnionFind:
-    """Union-Find data structure for grouping connected components."""
-    
-    def __init__(self, n: int):
-        self.parent = list(range(n))
-        self.rank = [0] * n
-    
-    def find(self, x: int) -> int:
-        if self.parent[x] != x:
-            self.parent[x] = self.find(self.parent[x])
-        return self.parent[x]
-    
-    def union(self, x: int, y: int):
-        px, py = self.find(x), self.find(y)
-        if px == py:
-            return
-        if self.rank[px] < self.rank[py]:
-            px, py = py, px
-        self.parent[py] = px
-        if self.rank[px] == self.rank[py]:
-            self.rank[px] += 1
-
 class PhotoGrouper:
     def __init__(self, tile_size: int = 1000, use_faiss: bool = True):
         """
@@ -49,7 +28,7 @@ class PhotoGrouper:
         self.use_faiss = use_faiss and FAISS_AVAILABLE
     
     def group_by_threshold(self, embeddings: Dict[str, np.ndarray], 
-                          threshold: float = 0.85, min_group_size: int = 1) -> List[List[str]]:
+                          threshold: float = 0.85, min_group_size: int = 1) -> Tuple[List[List[str]], List[float]]:
         """
         Group images based on cosine similarity threshold using direct comparison.
         
@@ -59,22 +38,24 @@ class PhotoGrouper:
             min_group_size: Minimum number of images in a group to include
             
         Returns:
-            List of groups, where each group is a list of image paths
+            Tuple of (groups, similarities) where:
+            - groups: List of groups, where each group is a list of image paths
+            - similarities: List of average similarity scores for each group
         """
         if not embeddings:
-            return []
+            return [], []
         
         image_paths = list(embeddings.keys())
         n = len(image_paths)
         
         if n <= 1:
-            return [image_paths]
+            return [image_paths], [1.0]  # Single image has perfect similarity with itself
         
         # Use direct similarity algorithm for better results
         return self._group_by_direct_similarity(embeddings, threshold, min_group_size)
     
     def _group_by_direct_similarity(self, embeddings: Dict[str, np.ndarray], 
-                                   threshold: float, min_group_size: int) -> List[List[str]]:
+                                   threshold: float, min_group_size: int) -> Tuple[List[List[str]], List[float]]:
         """
         NetworkX-based grouping algorithm using connected components.
         Creates a graph where edges connect images above similarity threshold,
@@ -109,10 +90,9 @@ class PhotoGrouper:
         # Convert sets to lists for consistency
         groups = [list(group) for group in groups]
 
-        
-        
         # Convert indices to image paths and separate singles from multi-image groups
         multi_groups = []
+        multi_similarities = []
         single_images = []
         
         for group_indices in groups:
@@ -122,20 +102,36 @@ class PhotoGrouper:
                     # Collect single images separately
                     single_images.extend(group_paths)
                 else:
+                    # Calculate average similarity for this group
+                    if len(group_indices) > 1:
+                        # Get pairwise similarities within the group
+                        group_sims = []
+                        for i, idx1 in enumerate(group_indices):
+                            for idx2 in group_indices[i+1:]:
+                                group_sims.append(sim_matrix[idx1, idx2])
+                        avg_similarity = np.mean(group_sims) if group_sims else threshold
+                    else:
+                        avg_similarity = 1.0  # Single image has perfect similarity
+                    
                     # Multi-image groups go directly to results
                     multi_groups.append(group_paths)
+                    multi_similarities.append(avg_similarity)
         
         # If we have single images, group them together into one "Singles" category
         result_groups = multi_groups
+        result_similarities = multi_similarities
         if single_images:
             print(f"Grouping {len(single_images)} singleton images into one 'Singles' category")
             result_groups.append(single_images)
+            # Singles don't have meaningful similarity
+            result_similarities.append(0.0)
         
-        return result_groups
+        return result_groups, result_similarities
     
     def sort_clusters_by_similarity(self, groups: List[List[str]], 
                                    embeddings: Dict[str, np.ndarray], 
-                                   cluster_threshold: float = 0.8) -> List[List[str]]:
+                                   similarities: List[float] = None,
+                                   cluster_threshold: float = 0.8) -> Tuple[List[List[str]], List[float]]:
         """
         Sort clusters based on main_image similarity to group related clusters together.
         Uses NetworkX connected components approach for better cluster ordering.
@@ -143,13 +139,17 @@ class PhotoGrouper:
         Args:
             groups: List of image groups (clusters)
             embeddings: Dictionary mapping image paths to embeddings
+            similarities: List of average similarity scores for each group
             cluster_threshold: Threshold for connecting clusters (default 0.8)
             
         Returns:
-            Reordered list of groups sorted by inter-cluster similarity
+            Tuple of (sorted_groups, sorted_similarities) sorted by inter-cluster similarity
         """
         if len(groups) <= 1:
-            return groups
+            if similarities:
+                return groups, similarities
+            else:
+                return groups, [1.0] * len(groups)
         
         # Select main_image (representative image) for each cluster
         cluster_main_images = []
@@ -189,8 +189,9 @@ class PhotoGrouper:
             component_with_sizes.sort(key=lambda x: x[1], reverse=True)
             sorted_indices.extend([idx for idx, _ in component_with_sizes])
         
-        # Reorder groups based on sorted indices
+        # Reorder groups and similarities based on sorted indices
         sorted_groups = [groups[i] for i in sorted_indices]
+        sorted_similarities = [similarities[i] for i in sorted_indices] if similarities else [1.0] * len(sorted_groups)
         
         # Find and move singles group to the front
         # The singles group is typically the largest group containing many unrelated images
@@ -201,8 +202,8 @@ class PhotoGrouper:
             # Heuristic: singles group is usually the largest and has low internal similarity
             if len(group) > max_size and len(group) > 10:  # At least 10 images to be considered singles
                 # Check if this is likely a singles group by sampling similarity
-                sample_size = min(5, len(group))
-                sample_paths = group[:sample_size]
+                sample_size = min(10, len(group))
+                sample_paths = random.sample(group, sample_size)
                 sample_embeddings = [embeddings[path] for path in sample_paths if path in embeddings]
                 
                 if len(sample_embeddings) >= 2:
@@ -211,14 +212,16 @@ class PhotoGrouper:
                     avg_similarity = np.mean(sample_similarity[np.triu_indices_from(sample_similarity, k=1)])
                     
                     # If average similarity is low, it's likely the singles group
-                    if avg_similarity < 0.6:  # Low similarity threshold
+                    if avg_similarity < 0.5:  # Low similarity threshold
                         max_size = len(group)
                         singles_group_idx = i
         
         # Move singles group to front if found
         if singles_group_idx is not None and singles_group_idx > 0:
             singles_group = sorted_groups.pop(singles_group_idx)
+            singles_similarity = sorted_similarities.pop(singles_group_idx)
             sorted_groups.insert(0, singles_group)
+            sorted_similarities.insert(0, singles_similarity)
             print(f"Moved singles group ({len(singles_group)} images) to front")
         
         # Debug output to show main images selected
@@ -227,7 +230,7 @@ class PhotoGrouper:
             main_image_path = self._select_main_image(group, embeddings)[0]
             print(f"  Cluster {i+1}: {os.path.basename(main_image_path)} ({len(group)} images)")
         
-        return sorted_groups
+        return sorted_groups, sorted_similarities
     
     def _select_main_image(self, group: List[str], embeddings: Dict[str, np.ndarray]) -> Tuple[str, np.ndarray]:
         """

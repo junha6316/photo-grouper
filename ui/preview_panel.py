@@ -118,11 +118,12 @@ class PreviewThumbnailWidget(QLabel):
 class GroupWidget(QFrame):
     """Widget to display a group of similar images."""
     
-    def __init__(self, group_images: List[str], group_number: int, is_singles_group: bool = False):
+    def __init__(self, group_images: List[str], group_number: int, is_singles_group: bool = False, similarity: float = None):
         super().__init__()
         self.group_images = group_images
         self.group_number = group_number
         self.is_singles_group = is_singles_group
+        self.similarity = similarity
         self.thumbnails = []  # Keep track of thumbnail widgets
         
         # Make the widget clickable
@@ -165,7 +166,11 @@ class GroupWidget(QFrame):
             header_color = "#666"
             header_style = "font-style: italic;"
         else:
-            header_text = f"Group {self.group_number} ({len(self.group_images)} images)"
+            # Include similarity score if available
+            if self.similarity is not None and self.similarity > 0:
+                header_text = f"Group {self.group_number} (Similarity: {self.similarity:.2f}) - {len(self.group_images)} images"
+            else:
+                header_text = f"Group {self.group_number} ({len(self.group_images)} images)"
             header_color = "#333"
             header_style = ""
         
@@ -287,13 +292,14 @@ class PreviewPanel(QWidget):
         # Connect scroll event for viewport detection
         self.scroll_area.verticalScrollBar().valueChanged.connect(self._on_scroll)
     
-    def display_groups(self, groups: List[List[str]], min_display_size: int = 2):
+    def display_groups(self, groups: List[List[str]], min_display_size: int = 2, similarities: List[float] = None):
         """
         Display photo groups in the panel.
         
         Args:
             groups: List of image groups (includes singles group)
             min_display_size: Minimum group size to display (singles group always shown)
+            similarities: List of average similarity scores for each group
         """
         print(f"DEBUG: display_groups called with {len(groups)} groups, min_display_size={min_display_size}")
         for i, group in enumerate(groups):
@@ -347,7 +353,15 @@ class PreviewPanel(QWidget):
             # Check if this is the singles group (it's the last one and smaller than min_display_size)
             is_singles = (i == len(groups_to_show) and len(group) < min_display_size)
             
-            group_widget = GroupWidget(group, i, is_singles_group=is_singles)
+            # Get similarity score for this group
+            similarity = None
+            if similarities:
+                # Find the original index of this group to get its similarity
+                original_idx = groups.index(group)
+                if original_idx < len(similarities):
+                    similarity = similarities[original_idx]
+            
+            group_widget = GroupWidget(group, i, is_singles_group=is_singles, similarity=similarity)
             self.group_widgets.append(group_widget)
             self.layout.addWidget(group_widget)
         

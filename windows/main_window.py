@@ -18,7 +18,7 @@ class ProcessingThread(QThread):
     """Thread for background image processing."""
     
     progress_updated = Signal(int, str)  # progress percentage, status message
-    processing_finished = Signal(list, dict)  # list of groups, embeddings dict
+    processing_finished = Signal(list, dict, list)  # list of groups, embeddings dict, similarities
     
     def __init__(self, folder_path: str, threshold: float):
         super().__init__()
@@ -34,7 +34,7 @@ class ProcessingThread(QThread):
             image_paths.sort()
             if not image_paths:
                 self.progress_updated.emit(100, "No images found")
-                self.processing_finished.emit([], {})
+                self.processing_finished.emit([], {}, [])
                 return
             
             # Step 2: Initialize embedder and fit PCA
@@ -76,14 +76,15 @@ class ProcessingThread(QThread):
             # Step 5: Group by similarity (always include singles for display control)
             self.progress_updated.emit(90, "Grouping similar images...")
             grouper = PhotoGrouper()
-            groups = grouper.group_by_threshold(embeddings, self.threshold, min_group_size=1)
+            groups, similarities = grouper.group_by_threshold(embeddings, self.threshold, min_group_size=1)
             
             # Step 6: Sort clusters by inter-cluster similarity (if enabled)
             if hasattr(self, 'sort_clusters_checkbox') and self.sort_clusters_checkbox.isChecked():
                 self.progress_updated.emit(95, "Sorting clusters by similarity...")
-                sorted_groups = grouper.sort_clusters_by_similarity(groups, embeddings, self.threshold)
+                sorted_groups, sorted_similarities = grouper.sort_clusters_by_similarity(groups, embeddings, similarities, self.threshold)
             else:
                 sorted_groups = groups
+                sorted_similarities = similarities
             
             # Show which method was used
             method = "Direct similarity algorithm"
@@ -91,11 +92,11 @@ class ProcessingThread(QThread):
             print(f"Clusters sorted by inter-cluster similarity: {len(sorted_groups)} groups")
             
             self.progress_updated.emit(100, f"Found {len(sorted_groups)} groups")
-            self.processing_finished.emit(sorted_groups, embeddings)
+            self.processing_finished.emit(sorted_groups, embeddings, sorted_similarities)
             
         except Exception as e:
             self.progress_updated.emit(100, f"Error: {str(e)}")
-            self.processing_finished.emit([], {})
+            self.processing_finished.emit([], {}, [])
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -266,10 +267,11 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(percentage)
         self.status_label.setText(message)
     
-    def on_processing_finished(self, groups: List[List[str]], embeddings: Dict[str, np.ndarray]):
+    def on_processing_finished(self, groups: List[List[str]], embeddings: Dict[str, np.ndarray], similarities: List[float]):
         """Handle completion of processing."""
         self.current_groups = groups
         self.current_embeddings = embeddings
+        self.current_similarities = similarities
         self.progress_bar.setVisible(False)
         self.folder_button.setEnabled(True)
         
@@ -284,7 +286,7 @@ class MainWindow(QMainWindow):
             
             # Update all views
             self.all_photos_view.set_images(self.all_image_paths)
-            self.grouped_photos_view.set_groups(groups, min_display_size)
+            self.grouped_photos_view.set_groups(groups, min_display_size, similarities)
             self.selected_photos_view.update_selected_images()
             
             total_images = sum(len(g) for g in groups)
@@ -333,24 +335,26 @@ class MainWindow(QMainWindow):
         # Quick regrouping without re-extracting embeddings
         try:
             grouper = PhotoGrouper()
-            groups = grouper.group_by_threshold(self.current_embeddings, threshold, min_group_size=1)
+            groups, similarities = grouper.group_by_threshold(self.current_embeddings, threshold, min_group_size=1)
             
             # Sort clusters by inter-cluster similarity (if enabled)
             if hasattr(self, 'sort_clusters_checkbox') and self.sort_clusters_checkbox.isChecked():
                 # Use same threshold for cluster sorting as for grouping
-                sorted_groups = grouper.sort_clusters_by_similarity(groups, self.current_embeddings, threshold)
+                sorted_groups, sorted_similarities = grouper.sort_clusters_by_similarity(groups, self.current_embeddings, similarities, threshold)
             else:
                 sorted_groups = groups
+                sorted_similarities = similarities
             
             # Debug output to console
             print(f"Threshold: {threshold}, Groups: {len(sorted_groups)}, Total images: {sum(len(g) for g in sorted_groups)}")
             print(f"Group sizes: {[len(g) for g in sorted_groups]}")
             
             self.current_groups = sorted_groups
+            self.current_similarities = sorted_similarities
             min_display_size = self.min_group_spinbox.value()
             
             # Update grouped photos view
-            self.grouped_photos_view.set_groups(sorted_groups, min_display_size)
+            self.grouped_photos_view.set_groups(sorted_groups, min_display_size, sorted_similarities)
             
             # Update deduplication button availability
             dedup_groups = [g for g in sorted_groups if len(g) > 1]
