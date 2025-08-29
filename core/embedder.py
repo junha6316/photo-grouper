@@ -191,23 +191,27 @@ class ImageEmbedder:
         
         return all_embeddings
 
-    def fit_pca(self, image_paths: list, batch_size: int = 32, force_refit: bool = False):
+    def fit_pca(self, image_paths: list, batch_size: int = 32, force_refit: bool = False, progress_callback=None) -> Dict[str, np.ndarray]:
         """
         Fit PCA on a set of images using batch processing.
         First tries to load from cache, then fits if needed.
+        Returns dictionary of path -> PCA-transformed embeddings.
         """
         # Try to load PCA model from cache first (unless forced to refit)
         if not force_refit:
             cached_pca = self.db_cache.load_pca_model(self.model_name, self.pca_components)
+            print(f"DEBUG: cached_pca: {cached_pca}")
             if cached_pca is not None:
                 self.pca = cached_pca
                 self.pca_fitted = True
-                return
+                # Still need to return embeddings
+                return self.get_embeddings_batch(image_paths, batch_size, progress_callback)
         
         print("Fitting PCA on image embeddings...")
         
         # Process images in batches
         raw_embeddings = self._get_raw_embeddings_batch(image_paths, batch_size)
+        print(f"DEBUG: raw_embeddings: {raw_embeddings}")
         
         # Fit PCA
         raw_embeddings_matrix = np.array(raw_embeddings)
@@ -221,6 +225,22 @@ class ImageEmbedder:
         explained_variance = np.sum(self.pca.explained_variance_ratio_)
         print(f"PCA fitted with {self.pca_components} components, "
               f"explaining {explained_variance:.3f} of the variance")
+        
+        # Transform embeddings and create dictionary
+        pca_embeddings = self.pca.transform(raw_embeddings_matrix)
+        # L2 normalize
+        pca_embeddings = pca_embeddings / (np.linalg.norm(pca_embeddings, axis=1, keepdims=True) + 1e-8)
+        
+        # Create dictionary and cache results
+        embeddings_dict = {}
+        for i, path in enumerate(image_paths):
+            embeddings_dict[path] = pca_embeddings[i]
+            # Cache the PCA embeddings
+            image_hash = self._get_image_hash(path)
+            self._embedding_cache[image_hash] = pca_embeddings[i]
+            self.db_cache.save_embedding(path, pca_embeddings[i], f"{self.model_name}_pca")
+        
+        return embeddings_dict
 
 
     def get_embeddings_batch(self, image_paths: list, batch_size: int = 32, progress_callback=None) -> Dict[str, np.ndarray]:
@@ -286,6 +306,7 @@ class ImageEmbedder:
             
             # Process uncached images in batch if any
             if batch_uncached:
+                print(f"DEBUG: batch_uncached: {batch_uncached}")   
                 self._process_uncached_batch(
                     batch_uncached, batch_uncached_indices,
                     embeddings, progress_callback, total_images, start_time)
@@ -323,7 +344,7 @@ class ImageEmbedder:
                 # Cache PCA embedding
                 self._embedding_cache[image_hash] = pca_embedding
                 self.db_cache.save_embedding(path, pca_embedding, f"{self.model_name}_pca")
-                embeddings[path] = raw_embedding
+                embeddings[path] = pca_embedding  # Use PCA embedding, not raw
             else:
                 self._embedding_cache[image_hash] = raw_embedding
                 embeddings[path] = raw_embedding

@@ -52,10 +52,9 @@ class ProcessingThread(QThread):
             #     # Use all images for PCA fitting (or subset if too many)
             #     pca_sample = image_paths[:min(1000, len(image_paths))]
             #     embedder.fit_pca(pca_sample)
-            
-            # Step 4: Extract PCA embeddings using efficient batch processing
+            # Progress callback for feature extraction
             def progress_callback(current_idx: int, total: int, current_path: str, eta_seconds=None):
-                progress = 30 + int(50 * current_idx / total)  # 30-80%
+                progress = 20 + int(60 * current_idx / total)  # 20-80%
                 message = f"Extracting features {current_idx+1}/{total}"
                 if eta_seconds is not None and eta_seconds > 0:
                     eta_min, eta_sec = divmod(int(eta_seconds), 60)
@@ -65,9 +64,10 @@ class ProcessingThread(QThread):
                         message += f" (Estimated time: {eta_sec}s)"
                 self.progress_updated.emit(progress, message)
             
-            # Use batch processing for much better performance
-            embeddings = embedder.get_embeddings_batch(
-                image_paths, batch_size=32, progress_callback=progress_callback)
+            self.progress_updated.emit(20, "Fitting PCA and extracting features...")
+            
+            # fit_pca now returns the embeddings dictionary directly
+            embeddings = embedder.fit_pca(image_paths, progress_callback=progress_callback)
             
             # Show cache stats
             cache_stats = embedder.get_cache_stats()
@@ -95,6 +95,7 @@ class ProcessingThread(QThread):
             self.processing_finished.emit(sorted_groups, embeddings, sorted_similarities)
             
         except Exception as e:
+            print(f"DEBUG: Error: {str(e)}")
             self.progress_updated.emit(100, f"Error: {str(e)}")
             self.processing_finished.emit([], {}, [])
 
