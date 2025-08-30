@@ -202,7 +202,7 @@ class PhotoGrouper:
             # Heuristic: singles group is usually the largest and has low internal similarity
             if len(group) > max_size and len(group) > 10:  # At least 10 images to be considered singles
                 # Check if this is likely a singles group by sampling similarity
-                sample_size = min(10, len(group))
+                sample_size = max(10, len(group))
                 sample_paths = random.sample(group, sample_size)
                 sample_embeddings = [embeddings[path] for path in sample_paths if path in embeddings]
                 
@@ -215,13 +215,14 @@ class PhotoGrouper:
                     if avg_similarity < 0.5:  # Low similarity threshold
                         max_size = len(group)
                         singles_group_idx = i
-        
+        print(f"DEBUG: singles_group_idx: {singles_group_idx}")
         # Move singles group to front if found
         if singles_group_idx is not None and singles_group_idx > 0:
+            
             singles_group = sorted_groups.pop(singles_group_idx)
             singles_similarity = sorted_similarities.pop(singles_group_idx)
-            sorted_groups.insert(0, singles_group)
-            sorted_similarities.insert(0, singles_similarity)
+            sorted_groups = [singles_group] + sorted_groups
+            sorted_similarities = [singles_similarity] + sorted_similarities
             print(f"Moved singles group ({len(singles_group)} images) to front")
         
         # Debug output to show main images selected
@@ -285,25 +286,6 @@ class PhotoGrouper:
         main_idx = np.argmax(avg_similarities)
         main_path = valid_paths[main_idx]
         main_embedding = group_embeddings[main_idx]
-        
-        print(f"  Main image for cluster: {os.path.basename(main_path)} (avg_sim: {avg_similarities[main_idx]:.3f})")
+    
         
         return main_path, main_embedding
-
-        """
-        Compute full similarity matrix for debugging/visualization.
-        
-        Args:
-            embeddings: Dictionary mapping image paths to embeddings
-            
-        Returns:
-            Tuple of (similarity_matrix, image_paths)
-        """
-        if not embeddings:
-            return np.array([]), []
-        
-        image_paths = list(embeddings.keys())
-        embedding_matrix = np.array([embeddings[path] for path in image_paths])
-        similarity_matrix = cosine_similarity(embedding_matrix)
-        
-        return similarity_matrix, image_paths

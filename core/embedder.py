@@ -6,7 +6,7 @@ from typing import Dict, Optional
 import hashlib
 from sklearn.decomposition import PCA
 from infra.cache_db import EmbeddingCache
-from .models import BaseModel, VGG16Model, ResNet18Model, MobileNetV3SmallModel
+from core.models import BaseModel, VGG16Model, ResNet18Model, MobileNetV3SmallModel
 
 # Initialize HEIF support if available
 try:
@@ -133,8 +133,7 @@ class ImageEmbedder:
         Returns:
             tuple: (embeddings_list, valid_paths_list) - only valid images are included
         """
-        batch_tensors = []
-        valid_paths = []
+        path_to_embedding = {}
         
         # Load and preprocess batch using ThreadPoolExecutor for efficiency
         def _load_transform_image(path: str) -> tuple[torch.Tensor, str]:
@@ -151,11 +150,14 @@ class ImageEmbedder:
             for future in as_completed(futures):
                 tensor, path = future.result()
                 if tensor is not None:
-                    batch_tensors.append(tensor)
-                    valid_paths.append(path)
+                    path_to_embedding[path] = tensor
+                   
         
-        if not batch_tensors:
+        if not list(path_to_embedding.values()):
             return [], []
+        
+        batch_tensors = list(path_to_embedding.values())
+        valid_paths = list(path_to_embedding.keys())
         
         # Stack into single batch tensor and extract features
         batch_tensor = torch.stack(batch_tensors).to(self.device)
@@ -165,8 +167,9 @@ class ImageEmbedder:
             # Normalize each feature vector
             features = torch.nn.functional.normalize(features, p=2, dim=1)
             embeddings = features.cpu().numpy()
-        
-        return embeddings, valid_paths
+
+        # sort like image paths
+        return [embeddings[valid_paths.index(path)] for path in image_paths], valid_paths
 
     def _get_raw_embeddings_batch(self, image_paths: list, batch_size: int = 32) -> list:
         """Process multiple images in batches for better GPU utilization."""
@@ -179,7 +182,7 @@ class ImageEmbedder:
             
             # Convert numpy array to list for consistent interface
             if len(batch_embeddings) > 0:
-                batch_embeddings_list = batch_embeddings.tolist()
+                batch_embeddings_list = batch_embeddings
             else:
                 batch_embeddings_list = []
             

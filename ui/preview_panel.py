@@ -314,28 +314,15 @@ class PreviewPanel(QWidget):
             self.layout.addWidget(no_groups_label)
             return
         
-        # Sort groups by size (largest first)
-        sorted_groups = sorted(groups, key=len, reverse=True)
-        
+        singles_group = groups[0]
+        sorted_groups = [singles_group] + sorted(groups[1:], key=len, reverse=True)
+
         # Separate multi-image groups from potential singles groups
         groups_to_show = []
-        potential_singles = []
         
         for group in sorted_groups:
             if len(group) >= min_display_size:
                 groups_to_show.append(group)
-            else:
-                potential_singles.append(group)
-        
-        # If we have remaining smaller groups, treat the largest one as the singles group
-        # This is because the grouper collects all single images into one group
-        if potential_singles:
-            # Sort potential singles by size (largest first) to get the actual singles group
-            potential_singles.sort(key=len, reverse=True)
-            singles_group = potential_singles[0]  # Take the largest group of small groups
-            groups_to_show.append(singles_group)
-        
-        print(f"DEBUG: groups_to_show has {len(groups_to_show)} groups")
         
         if not groups_to_show:
             print("DEBUG: No groups to show!")
@@ -349,9 +336,8 @@ class PreviewPanel(QWidget):
         self.group_widgets = []
         
         # Add each group
-        for i, group in enumerate(groups_to_show, 1):
+        for i, group in enumerate(groups_to_show):
             # Check if this is the singles group (it's the last one and smaller than min_display_size)
-            is_singles = (i == len(groups_to_show) and len(group) < min_display_size)
             
             # Get similarity score for this group
             similarity = None
@@ -361,7 +347,7 @@ class PreviewPanel(QWidget):
                 if original_idx < len(similarities):
                     similarity = similarities[original_idx]
             
-            group_widget = GroupWidget(group, i, is_singles_group=is_singles, similarity=similarity)
+            group_widget = GroupWidget(group, i, is_singles_group=i == 0, similarity=similarity)
             self.group_widgets.append(group_widget)
             self.layout.addWidget(group_widget)
         
@@ -371,6 +357,7 @@ class PreviewPanel(QWidget):
         # Start viewport monitoring
         self.viewport_timer.start(500)  # Check every 500ms
         self._check_viewport()  # Initial check
+
     def clear(self):
         """Clear all widgets from the panel."""
         self.group_widgets = []

@@ -79,12 +79,9 @@ class ProcessingThread(QThread):
             groups, similarities = grouper.group_by_threshold(embeddings, self.threshold, min_group_size=1)
             
             # Step 6: Sort clusters by inter-cluster similarity (if enabled)
-            if hasattr(self, 'sort_clusters_checkbox') and self.sort_clusters_checkbox.isChecked():
-                self.progress_updated.emit(95, "Sorting clusters by similarity...")
-                sorted_groups, sorted_similarities = grouper.sort_clusters_by_similarity(groups, embeddings, similarities, self.threshold)
-            else:
-                sorted_groups = groups
-                sorted_similarities = similarities
+            
+            self.progress_updated.emit(95, "Sorting clusters by similarity...")
+            sorted_groups, sorted_similarities = grouper.sort_clusters_by_similarity(groups, embeddings, similarities, self.threshold)
             
             # Show which method was used
             method = "Direct similarity algorithm"
@@ -337,14 +334,8 @@ class MainWindow(QMainWindow):
         try:
             grouper = PhotoGrouper()
             groups, similarities = grouper.group_by_threshold(self.current_embeddings, threshold, min_group_size=1)
+            sorted_groups, sorted_similarities = grouper.sort_clusters_by_similarity(groups, self.current_embeddings, similarities, threshold)
             
-            # Sort clusters by inter-cluster similarity (if enabled)
-            if hasattr(self, 'sort_clusters_checkbox') and self.sort_clusters_checkbox.isChecked():
-                # Use same threshold for cluster sorting as for grouping
-                sorted_groups, sorted_similarities = grouper.sort_clusters_by_similarity(groups, self.current_embeddings, similarities, threshold)
-            else:
-                sorted_groups = groups
-                sorted_similarities = similarities
             
             # Debug output to console
             print(f"Threshold: {threshold}, Groups: {len(sorted_groups)}, Total images: {sum(len(g) for g in sorted_groups)}")
