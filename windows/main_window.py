@@ -19,6 +19,7 @@ class ProcessingThread(QThread):
     
     progress_updated = Signal(int, str)  # progress percentage, status message
     processing_finished = Signal(list, dict, list)  # list of groups, embeddings dict, similarities
+    images_scanned = Signal(list)  # Emit scanned images immediately for display
     
     def __init__(self, folder_path: str, threshold: float):
         super().__init__()
@@ -37,22 +38,14 @@ class ProcessingThread(QThread):
                 self.processing_finished.emit([], {}, [])
                 return
             
+            # Emit scanned images immediately so UI can start displaying them
+            self.images_scanned.emit(image_paths)
+            self.progress_updated.emit(12, f"Found {len(image_paths)} images, extracting features...")
+            
             # Step 2: Initialize embedder and fit PCA
             self.progress_updated.emit(15, "Initializing embedder...")
             embedder = ImageEmbedder()
             
-            # # Step 3: Fit PCA (skip if already have enough cached PCA embeddings), pca 하면
-            # # Check if we have sufficient PCA embeddings cached
-            # if embedder.db_cache.has_sufficient_pca_embeddings(embedder.model_name, min_count=100):
-            #     self.progress_updated.emit(25, "Loading cached PCA model...")
-            #     # Try to load cached PCA model
-            #     embedder.fit_pca([], force_refit=False)  # Just loads from cache
-            # else:
-            #     self.progress_updated.emit(20, "Fitting PCA...")
-            #     # Use all images for PCA fitting (or subset if too many)
-            #     pca_sample = image_paths[:min(1000, len(image_paths))]
-            #     embedder.fit_pca(pca_sample)
-            # Progress callback for feature extraction
             def progress_callback(current_idx: int, total: int, current_path: str, eta_seconds=None):
                 progress = 20 + int(60 * current_idx / total)  # 20-80%
                 message = f"Extracting features {current_idx+1}/{total}"
@@ -248,6 +241,18 @@ class MainWindow(QMainWindow):
         if not self.current_folder:
             return
             
+        # Clear previous data and reset tab labels
+        self.all_photos_view.clear()
+        self.grouped_photos_view.clear()
+        self.selected_photos_view.update_selected_images()
+        
+        # Reset tab labels to show loading state
+        self.tab_widget.setTabText(0, "📷 All Photos (Loading...)")
+        self.tab_widget.setTabText(1, "📁 Grouped (Processing...)")
+        # Selected tab remains accessible
+        count = len(self.global_selected_images)
+        self.tab_widget.setTabText(2, f"⭐ Selected ({count})")
+        
         # Show progress
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
@@ -257,6 +262,7 @@ class MainWindow(QMainWindow):
         threshold = self.threshold_slider.value() / 100.0
         self.processing_thread = ProcessingThread(self.current_folder, threshold)
         self.processing_thread.progress_updated.connect(self.on_progress_updated)
+        self.processing_thread.images_scanned.connect(self.on_images_scanned)
         self.processing_thread.processing_finished.connect(self.on_processing_finished)
         self.processing_thread.start()
     
@@ -264,6 +270,25 @@ class MainWindow(QMainWindow):
         """Handle progress updates from processing thread."""
         self.progress_bar.setValue(percentage)
         self.status_label.setText(message)
+        
+        # Update grouped view with progress if it's showing processing message
+        if hasattr(self.grouped_photos_view, 'update_processing_progress'):
+            self.grouped_photos_view.update_processing_progress(percentage, message)
+    
+    def on_images_scanned(self, image_paths: List[str]):
+        """Handle immediate display of scanned images before processing."""
+        # Store the scanned images
+        self.all_image_paths = image_paths
+        
+        # Immediately populate the All Photos tab
+        self.all_photos_view.set_images(image_paths)
+        
+        # Update tab text to show count
+        self.tab_widget.setTabText(0, f"📷 All Photos ({len(image_paths)})")
+        
+        # Keep grouped tab showing processing with initial status
+        self.tab_widget.setTabText(1, "📁 Grouped (Processing...)")
+        self.grouped_photos_view.show_processing_message(f"Found {len(image_paths)} images\nExtracting image features...")
     
     def on_processing_finished(self, groups: List[List[str]], embeddings: Dict[str, np.ndarray], similarities: List[float]):
         """Handle completion of processing."""
@@ -282,10 +307,14 @@ class MainWindow(QMainWindow):
         if groups:
             min_display_size = self.min_group_spinbox.value()
             
-            # Update all views
-            self.all_photos_view.set_images(self.all_image_paths)
+            # Update all views (All photos already set in on_images_scanned)
+            # Just update the grouped view with the final groups
             self.grouped_photos_view.set_groups(groups, min_display_size, similarities)
             self.selected_photos_view.update_selected_images()
+            
+            # Update tab text to show final counts
+            self.tab_widget.setTabText(0, "📷 All Photos")
+            self.tab_widget.setTabText(1, "📁 Grouped")
             
             total_images = sum(len(g) for g in groups)
             
