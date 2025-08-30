@@ -228,10 +228,10 @@ class SelectedPhotosView(QWidget):
         self.single_view_index = self.stacked_widget.addWidget(self.single_view)
         
         # Set the current view mode
-        if self.current_view_mode == "grid":
-            self.stacked_widget.setCurrentIndex(self.grid_view_index)
-        else:
-            self.stacked_widget.setCurrentIndex(self.single_view_index)
+        if self.current_view_mode == "grid" and self.grid_view:
+            self.stacked_widget.setCurrentWidget(self.grid_view)
+        elif self.current_view_mode == "single" and self.single_view:
+            self.stacked_widget.setCurrentWidget(self.single_view)
     
     def set_view_mode(self, mode: str):
         """Switch between grid and single view modes."""
@@ -244,14 +244,14 @@ class SelectedPhotosView(QWidget):
             return
         
         if mode == "grid":
-            if self.grid_view_index >= 0:
-                self.stacked_widget.setCurrentIndex(self.grid_view_index)
+            if self.grid_view:
+                self.stacked_widget.setCurrentWidget(self.grid_view)
                 self.grid_view_button.setChecked(True)
                 # Sync selections from single view to grid view
                 self.sync_selections_to_grid_view()
         elif mode == "single":
-            if self.single_view_index >= 0:
-                self.stacked_widget.setCurrentIndex(self.single_view_index)
+            if self.single_view:
+                self.stacked_widget.setCurrentWidget(self.single_view)
                 self.single_view_button.setChecked(True)
                 # Sync selections from grid to single view
                 self.sync_selections_to_single_view()

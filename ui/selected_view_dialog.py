@@ -166,12 +166,12 @@ class SelectedViewDialog(QDialog):
         self.current_view_mode = mode
         
         if mode == "grid":
-            self.stacked_widget.setCurrentIndex(0)
+            self.stacked_widget.setCurrentWidget(self.grid_view)
             self.grid_view_button.setChecked(True)
             # Sync selections from single view to grid view
             self.sync_selections_to_grid_view()
         elif mode == "single":
-            self.stacked_widget.setCurrentIndex(1)
+            self.stacked_widget.setCurrentWidget(self.single_view)
             self.single_view_button.setChecked(True)
             # Sync selections from grid to single view
             self.sync_selections_to_single_view()
