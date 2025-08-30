@@ -98,19 +98,19 @@ The application uses a modular architecture:
 
 ```
 photo-grouper/
-- app.py                 # Application entry point
-- core/                  # Core processing logic
-- scanner.py        # Image discovery
-- embedder.py       # ML feature extraction
-- grouper.py        # Similarity grouping
-- deduplicator.py   # Duplicate detection
-- infra/                # Infrastructure layer
-- cache_db.py       # Embedding cache
-- ui/                   # User interface
-- main_window.py    # Main application window
-- preview_panel.py  # Thumbnail grid
-- components/       # Reusable UI components
-- tests/                # Test suite
+├── app.py                 # Application entry point
+├── core/                  # Core processing logic
+│   ├── scanner.py        # Image discovery
+│   ├── embedder.py       # ML feature extraction
+│   ├── grouper.py        # Similarity grouping
+│   └── deduplicator.py   # Duplicate detection
+├── infra/                # Infrastructure layer
+│   └── cache_db.py       # Embedding cache
+├── ui/                   # User interface
+│   ├── main_window.py    # Main application window
+│   ├── preview_panel.py  # Thumbnail grid
+│   └── components/       # Reusable UI components
+└── tests/                # Test suite
 ```
 
 ### Development Commands
@@ -145,7 +145,7 @@ Key dependencies:
 
 ## License
 
-[Your License Here]
+MIT License - see the [LICENSE](LICENSE) file for details
 
 ## Contributing
 
