@@ -1,0 +1,62 @@
+[tools]
+python = "3.13"
+node = "20.11.0"  # 향후 web 패키지를 위해 미리 추가
+pnpm = "8.15.0"   # 향후 web 패키지를 위해 미리 추가
+
+[env]
+# 공통 환경변수
+PROJECT_ROOT = "{{config_root}}"
+DESKTOP_PATH = "{{config_root}}/packages/desktop"
+
+[tasks.install]
+description = "Install all dependencies"
+run = ["cd packages/desktop && uv sync"]
+
+[tasks.install-dev]
+description = "Install development dependencies"
+run = [
+  "cd packages/desktop && uv sync --dev",
+  "cd packages/desktop && uv run pre-commit install"
+]
+
+[tasks.format]
+description = "Format code with black and isort"
+run = "cd packages/desktop && uv run black . && uv run isort ."
+
+[tasks.lint]
+description = "Run ruff linter"
+run = "cd packages/desktop && uv run ruff check . --fix"
+
+[tasks."type-check"]
+description = "Run mypy type checker"
+run = "cd packages/desktop && uv run mypy ."
+
+[tasks.check]
+description = "Run all checks (format, lint, type-check)"
+depends = ["format", "lint", "type-check"]
+
+[tasks.clean]
+description = "Remove cache files"
+run = [
+  "find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true",
+  "find . -type f -name '*.pyc' -delete",
+  "find . -type f -name '*.pyo' -delete",
+  "find . -type f -name '*.pyd' -delete",
+  "find . -type f -name '.coverage' -delete",
+  "find . -type d -name '*.egg-info' -exec rm -rf {} + 2>/dev/null || true",
+  "find . -type d -name '.pytest_cache' -exec rm -rf {} + 2>/dev/null || true",
+  "find . -type d -name '.mypy_cache' -exec rm -rf {} + 2>/dev/null || true",
+  "find . -type d -name '.ruff_cache' -exec rm -rf {} + 2>/dev/null || true"
+]
+
+[tasks.test]
+description = "Run tests"
+run = "cd packages/desktop && uv run pytest tests/"
+
+[tasks.run]
+description = "Run the desktop application"
+run = "cd packages/desktop && uv run python app.py"
+
+[tasks."run-desktop"]
+description = "Run the desktop application (alias)"
+run = "cd packages/desktop && uv run python app.py"
