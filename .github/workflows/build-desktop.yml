@@ -28,12 +28,10 @@ jobs:
             target: macos
             artifact: photo-grouper-macos.dmg
             build_command: |
-              pwd
-
               # Install create-dmg for macOS packaging
               brew install create-dmg
               # Build with PyInstaller using spec file
-              uv run pyinstaller /desktop/photo-grouper.spec
+              uv run pyinstaller ./photo-grouper.spec
 
               # Create DMG
               create-dmg \
