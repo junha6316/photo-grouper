@@ -1,9 +1,53 @@
+import { useState } from "react";
 import "./App.css";
 
+interface DownloadResponse {
+  platform: string;
+  fileName: string;
+  downloadUrl: string;
+  fileSize: number;
+  expiresIn: number;
+}
+
 function App() {
-  const handleDownload = (platform: string) => {
-    // TODO: Implement actual download functionality
-    alert(`Download for ${platform} will be available soon!`);
+  const [downloadingPlatform, setDownloadingPlatform] = useState<string | null>(
+    null
+  );
+
+  const handleDownload = async (platform: string) => {
+    setDownloadingPlatform(platform);
+
+    try {
+      const response = await fetch(
+        `/api/download?platform=${platform.toLowerCase()}`
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Download failed");
+      }
+
+      const data: DownloadResponse = await response.json();
+
+      // Create a temporary link to trigger download
+      const link = document.createElement("a");
+      link.href = data.downloadUrl;
+      link.download = data.fileName;
+      link.style.display = "none";
+
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error("Download error:", error);
+      alert(
+        `Failed to download for ${platform}. ${
+          error instanceof Error ? error.message : "Please try again later."
+        }`
+      );
+    } finally {
+      setDownloadingPlatform(null);
+    }
   };
 
   return (
@@ -23,20 +67,29 @@ function App() {
             <button
               className="download-btn primary"
               onClick={() => handleDownload("macOS")}
+              disabled={downloadingPlatform !== null}
             >
-              Download for macOS
+              {downloadingPlatform === "macOS"
+                ? "Downloading..."
+                : "Download for macOS"}
             </button>
             <button
               className="download-btn secondary"
               onClick={() => handleDownload("Windows")}
+              disabled={downloadingPlatform !== null}
             >
-              Download for Windows
+              {downloadingPlatform === "Windows"
+                ? "Downloading..."
+                : "Download for Windows"}
             </button>
             <button
               className="download-btn secondary"
               onClick={() => handleDownload("Linux")}
+              disabled={downloadingPlatform !== null}
             >
-              Download for Linux
+              {downloadingPlatform === "Linux"
+                ? "Downloading..."
+                : "Download for Linux"}
             </button>
           </div>
         </div>

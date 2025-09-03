@@ -83,6 +83,17 @@
   transform: translateY(-2px);
 }
 
+.download-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.download-btn:disabled:hover {
+  transform: none !important;
+  box-shadow: none !important;
+}
+
 .hero-image {
   flex: 1;
   display: flex;
