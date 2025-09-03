@@ -124,24 +124,7 @@ jobs:
           version: "latest"
           enable-cache: true
 
-      - name: Cache mise tools
-        uses: actions/cache@v4
-        with:
-          path: ~/.local/share/mise
-          key: ${{ runner.os }}-mise-${{ hashFiles('.mise.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-mise-
-
-      - name: Cache uv dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            packages/desktop/.venv
-            ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ hashFiles('packages/desktop/uv.lock', 'packages/desktop/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-uv-
-
+   
       - name: Setup Python and dependencies
         run: |
           cd packages/desktop
@@ -153,25 +136,7 @@ jobs:
           cd packages/desktop
           uv add --dev pyinstaller
 
-      - name: Cache platform-specific tools
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ runner.os == 'macOS' && '/opt/homebrew/Cellar/create-dmg' || '' }}
-            ${{ runner.os == 'Linux' && './appimagetool-x86_64.AppImage' || '' }}
-          key: ${{ runner.os }}-tools-${{ matrix.target }}
-          restore-keys: |
-            ${{ runner.os }}-tools-
-
-      - name: Cache PyInstaller build
-        uses: actions/cache@v4
-        with:
-          path: |
-            packages/desktop/build
-            packages/desktop/dist
-          key: ${{ runner.os }}-pyinstaller-${{ hashFiles('packages/desktop/**/*.py', 'packages/desktop/photo-grouper.spec') }}
-          restore-keys: |
-            ${{ runner.os }}-pyinstaller-
+  
 
       - name: Create placeholder icon files (if not exist)
         run: |
