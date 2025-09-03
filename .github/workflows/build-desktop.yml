@@ -32,7 +32,7 @@ jobs:
               brew install create-dmg
 
               # Build with PyInstaller using spec file
-              uv run pyinstaller photo-grouper.spec
+              uv run pyinstaller ./packages/desktop/photo-grouper.spec
 
               # Create DMG
               create-dmg \
@@ -51,7 +51,7 @@ jobs:
             artifact: photo-grouper-windows.exe
             build_command: |
               # Build with PyInstaller using spec file
-              uv run pyinstaller photo-grouper.spec
+              uv run pyinstaller ./packages/desktop/photo-grouper.spec
 
               # Move and rename the executable
               mv "dist/Photo Grouper.exe" "photo-grouper-windows.exe"
@@ -68,10 +68,10 @@ jobs:
 
               # Build with PyInstaller using spec file (but modify for Linux)
               # Create a Linux-specific spec file
-              cp photo-grouper.spec photo-grouper-linux.spec
+              cp ./packages/desktop/photo-grouper.spec photo-grouper-linux.spec
               sed -i "s/name='Photo Grouper'/name='photo-grouper'/" photo-grouper-linux.spec
               sed -i "s/console=False/console=False/" photo-grouper-linux.spec
-              uv run pyinstaller photo-grouper-linux.spec
+              uv run pyinstaller ./packages/desktop/photo-grouper-linux.spec
 
               # Create AppDir structure
               mkdir -p AppDir/usr/bin
