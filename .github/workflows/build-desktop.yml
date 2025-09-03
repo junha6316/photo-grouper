@@ -1,0 +1,214 @@
+name: Build and Deploy Desktop App
+
+on:
+  push:
+    paths:
+      - "packages/desktop/**"
+      - ".github/workflows/build-desktop.yml"
+    branches:
+      - main
+      - develop
+  pull_request:
+    paths:
+      - "packages/desktop/**"
+    branches:
+      - main
+
+env:
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: macos
+            artifact: photo-grouper-macos.dmg
+            build_command: |
+              # Install create-dmg for macOS packaging
+              brew install create-dmg
+
+              # Build with PyInstaller using spec file
+              uv run pyinstaller photo-grouper.spec
+
+              # Create DMG
+              create-dmg \
+                --volname "Photo Grouper" \
+                --window-pos 200 120 \
+                --window-size 800 400 \
+                --icon-size 100 \
+                --icon "Photo Grouper.app" 200 190 \
+                --hide-extension "Photo Grouper.app" \
+                --app-drop-link 600 185 \
+                "photo-grouper-macos.dmg" \
+                "dist/"
+
+          - os: windows-latest
+            target: windows
+            artifact: photo-grouper-windows.exe
+            build_command: |
+              # Build with PyInstaller using spec file
+              uv run pyinstaller photo-grouper.spec
+
+              # Move and rename the executable
+              mv "dist/Photo Grouper.exe" "photo-grouper-windows.exe"
+
+          - os: ubuntu-latest
+            target: linux
+            artifact: photo-grouper-linux.AppImage
+            build_command: |
+              # Install AppImage tools
+              sudo apt-get update
+              sudo apt-get install -y fuse libfuse2
+              wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+              chmod +x appimagetool-x86_64.AppImage
+
+              # Build with PyInstaller using spec file (but modify for Linux)
+              # Create a Linux-specific spec file
+              cp photo-grouper.spec photo-grouper-linux.spec
+              sed -i "s/name='Photo Grouper'/name='photo-grouper'/" photo-grouper-linux.spec
+              sed -i "s/console=False/console=False/" photo-grouper-linux.spec
+              uv run pyinstaller photo-grouper-linux.spec
+
+              # Create AppDir structure
+              mkdir -p AppDir/usr/bin
+              mkdir -p AppDir/usr/share/applications
+              mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+
+              # Copy executable
+              cp dist/photo-grouper AppDir/usr/bin/
+
+              # Create .desktop file
+              cat > AppDir/photo-grouper.desktop << EOF
+              [Desktop Entry]
+              Type=Application
+              Name=Photo Grouper
+              Exec=photo-grouper
+              Icon=photo-grouper
+              Comment=Intelligent photo organization using machine learning
+              Categories=Graphics;Photography;
+              EOF
+
+              # Copy icon (if exists)
+              if [ -f "assets/icon.png" ]; then
+                cp assets/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/photo-grouper.png
+                cp assets/icon.png AppDir/photo-grouper.png
+              fi
+
+              # Copy desktop file to AppDir root
+              cp AppDir/photo-grouper.desktop AppDir/
+
+              # Create AppRun
+              cat > AppDir/AppRun << 'EOF'
+              #!/bin/bash
+              cd "$(dirname "$0")"
+              exec ./usr/bin/photo-grouper "$@"
+              EOF
+              chmod +x AppDir/AppRun
+
+              # Build AppImage
+              ./appimagetool-x86_64.AppImage AppDir photo-grouper-linux.AppImage
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install mise
+        uses: jdx/mise-action@v2
+
+      - name: Setup Python and dependencies
+        run: |
+          cd packages/desktop
+          mise install
+          mise exec -- uv sync
+
+      - name: Install PyInstaller
+        run: |
+          cd packages/desktop
+          mise exec -- uv add --dev pyinstaller
+
+      - name: Create placeholder icon files (if not exist)
+        run: |
+          mkdir -p assets
+          # Create placeholder icons if they don't exist
+          if [ ! -f "assets/icon.icns" ] && [ "${{ matrix.target }}" = "macos" ]; then
+            # Create a simple placeholder icon for macOS
+            echo "Creating placeholder icon for macOS"
+            touch assets/icon.icns
+          fi
+          if [ ! -f "assets/icon.ico" ] && [ "${{ matrix.target }}" = "windows" ]; then
+            # Create a simple placeholder icon for Windows  
+            echo "Creating placeholder icon for Windows"
+            touch assets/icon.ico
+          fi
+          if [ ! -f "assets/icon.png" ] && [ "${{ matrix.target }}" = "linux" ]; then
+            # Create a simple placeholder icon for Linux
+            echo "Creating placeholder icon for Linux"
+            touch assets/icon.png
+          fi
+
+      - name: Build application
+        run: |
+          cd packages/desktop
+          mise exec -- ${{ matrix.build_command }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}-build
+          path: packages/desktop/${{ matrix.artifact }}
+
+  deploy:
+    name: Deploy to Cloudflare R2
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Install Wrangler CLI
+        run: npm install -g wrangler
+
+      - name: Upload to Cloudflare R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # Upload macOS build
+          if [ -f "artifacts/macos-build/photo-grouper-macos.dmg" ]; then
+            wrangler r2 object put photo-grouper-downloads/photo-grouper-macos.dmg \
+              --file artifacts/macos-build/photo-grouper-macos.dmg \
+              --content-type application/octet-stream
+          fi
+
+          # Upload Windows build  
+          if [ -f "artifacts/windows-build/photo-grouper-windows.exe" ]; then
+            wrangler r2 object put photo-grouper-downloads/photo-grouper-windows.exe \
+              --file artifacts/windows-build/photo-grouper-windows.exe \
+              --content-type application/octet-stream
+          fi
+
+          # Upload Linux build
+          if [ -f "artifacts/linux-build/photo-grouper-linux.AppImage" ]; then
+            wrangler r2 object put photo-grouper-downloads/photo-grouper-linux.AppImage \
+              --file artifacts/linux-build/photo-grouper-linux.AppImage \
+              --content-type application/octet-stream
+          fi
+
+      - name: Clean up old artifacts (optional)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          echo "Build completed and uploaded to R2"
+          echo "Files available at:"
+          echo "- macOS: photo-grouper-macos.dmg"
+          echo "- Windows: photo-grouper-windows.exe" 
+          echo "- Linux: photo-grouper-linux.AppImage"
