@@ -129,3 +129,4 @@ wrangler r2 object get photo-grouper-downloads/photo-grouper-macos.dmg --file te
 3. Make a test change to `packages/desktop/`
 4. Push to `main` branch
 5. Watch the magic happen in the Actions tab! ✨
+
