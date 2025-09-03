@@ -57,17 +57,14 @@ export default {
           );
         }
 
-        // Generate presigned URL (valid for 1 hour)
-        const presignedUrl = await env.DOWNLOADS.createPresignedUrl(fileName, {
-          expiresIn: 3600, // 1 hour
-          httpMethod: "GET",
-        });
+        // Generate download URL that points back to our worker
+        const downloadUrl = `${url.origin}/api/download-file?platform=${platform}`;
 
         return Response.json(
           {
             platform,
             fileName,
-            downloadUrl: presignedUrl,
+            downloadUrl,
             fileSize: object.size,
             expiresIn: 3600,
           },
@@ -79,6 +76,42 @@ export default {
           { error: "Failed to generate download URL" },
           { status: 500, headers: corsHeaders }
         );
+      }
+    }
+
+    // Direct file download endpoint
+    if (url.pathname === "/api/download-file") {
+      const platform = url.searchParams.get("platform");
+
+      if (!platform || !(platform in DOWNLOAD_FILES)) {
+        return new Response("Invalid platform", { status: 400 });
+      }
+
+      const fileName = DOWNLOAD_FILES[platform as keyof typeof DOWNLOAD_FILES];
+
+      try {
+        // Get file from R2
+        const object = await env.DOWNLOADS.get(fileName);
+        if (!object) {
+          return new Response("File not found", { status: 404 });
+        }
+
+        // Set appropriate headers for file download
+        const headers = new Headers();
+        headers.set("Content-Type", "application/octet-stream");
+        headers.set(
+          "Content-Disposition",
+          `attachment; filename="${fileName}"`
+        );
+        headers.set("Content-Length", object.size.toString());
+
+        // Add CORS headers
+        headers.set("Access-Control-Allow-Origin", "*");
+
+        return new Response(object.body, { headers });
+      } catch (error) {
+        console.error("Error downloading file:", error);
+        return new Response("Download failed", { status: 500 });
       }
     }
 
