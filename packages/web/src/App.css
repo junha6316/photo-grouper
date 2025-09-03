@@ -11,6 +11,7 @@
   gap: 3rem;
   padding: 4rem 2rem;
   min-height: 80vh;
+  background: radial-gradient(ellipse at top, rgba(100, 108, 255, 0.1), transparent 50%);
 }
 
 .hero-content {
@@ -134,34 +135,60 @@
 }
 
 .feature-card {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  padding: 2rem;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 2.5rem;
   text-align: center;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+}
+
+.feature-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(100, 108, 255, 0.05), rgba(97, 218, 251, 0.05));
+  opacity: 0;
+  transition: opacity 0.3s ease;
 }
 
 .feature-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+  transform: translateY(-8px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.feature-card:hover::before {
+  opacity: 1;
 }
 
 .feature-icon {
   font-size: 3rem;
   margin-bottom: 1rem;
+  position: relative;
+  z-index: 1;
 }
 
 .feature-card h3 {
   font-size: 1.3rem;
   margin: 0 0 1rem 0;
   font-weight: 600;
+  position: relative;
+  z-index: 1;
 }
 
 .feature-card p {
   color: rgba(255, 255, 255, 0.8);
   line-height: 1.5;
   margin: 0;
+  position: relative;
+  z-index: 1;
 }
 
 /* Requirements Section */
@@ -178,22 +205,49 @@
 
 .requirements-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 2rem;
+  max-width: 1000px;
+  margin: 0 auto;
 }
 
 .requirement-card {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  padding: 2rem;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  padding: 2.5rem;
   text-align: center;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.requirement-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.requirement-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #646cff, #61dafb, #f6821f);
+  border-radius: 20px 20px 0 0;
 }
 
 .requirement-card h3 {
-  font-size: 1.5rem;
-  margin: 0 0 1.5rem 0;
-  font-weight: 600;
+  font-size: 1.8rem;
+  margin: 0 0 2rem 0;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
 }
 
 .requirement-card ul {
@@ -204,13 +258,30 @@
 }
 
 .requirement-card li {
-  padding: 0.5rem 0;
-  color: rgba(255, 255, 255, 0.8);
+  padding: 1rem 0;
+  color: rgba(255, 255, 255, 0.85);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.requirement-card li:hover {
+  color: rgba(255, 255, 255, 0.95);
 }
 
 .requirement-card li:last-child {
   border-bottom: none;
+}
+
+.requirement-card li::before {
+  content: '✓';
+  color: #61dafb;
+  font-weight: bold;
+  font-size: 1.1rem;
+  flex-shrink: 0;
 }
 
 /* Installation Section */
@@ -240,10 +311,18 @@
   display: flex;
   align-items: center;
   gap: 2rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  padding: 2rem;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 2.5rem;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.step:hover {
+  transform: translateX(8px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .step-number {
@@ -341,18 +420,56 @@
 }
 
 @media (prefers-color-scheme: light) {
+  .hero {
+    background: radial-gradient(ellipse at top, rgba(100, 108, 255, 0.05), transparent 50%);
+  }
+
   .hero-description,
   .feature-card p,
-  .requirement-card li,
   .step-content p {
     color: rgba(0, 0, 0, 0.7);
   }
-
+  
   .hero-subtitle {
     color: rgba(0, 0, 0, 0.6);
   }
-
+  
   .footer p {
     color: rgba(0, 0, 0, 0.5);
+  }
+
+  .feature-card,
+  .requirement-card,
+  .step {
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.03), rgba(0, 0, 0, 0.01));
+    border: 1px solid rgba(0, 0, 0, 0.08);
+  }
+
+  .feature-card:hover,
+  .requirement-card:hover {
+    border-color: rgba(0, 0, 0, 0.15);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
+  }
+
+  .step:hover {
+    border-color: rgba(0, 0, 0, 0.15);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+  }
+
+  .feature-card::before {
+    background: linear-gradient(135deg, rgba(100, 108, 255, 0.02), rgba(97, 218, 251, 0.02));
+  }
+
+  .requirement-card li {
+    color: rgba(0, 0, 0, 0.8);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  }
+
+  .requirement-card li:hover {
+    color: rgba(0, 0, 0, 0.9);
+  }
+
+  .requirement-card li::before {
+    color: #646cff;
   }
 }
