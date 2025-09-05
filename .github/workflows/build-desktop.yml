@@ -139,6 +139,7 @@ jobs:
   
 
       - name: Create placeholder icon files (if not exist)
+        shell: bash
         run: |
           mkdir -p assets
           # Create placeholder icons if they don't exist
@@ -159,6 +160,7 @@ jobs:
           fi
 
       - name: Build application
+        shell: bash
         run: |
           cd packages/desktop
           ${{ matrix.build_command }}
@@ -185,6 +187,7 @@ jobs:
         run: npm install -g wrangler
 
       - name: Upload to Cloudflare R2
+        shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -211,6 +214,7 @@ jobs:
           fi
 
       - name: Clean up old artifacts (optional)
+        shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
