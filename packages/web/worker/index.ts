@@ -8,6 +8,24 @@ const DOWNLOAD_FILES = {
   linux: "photo-grouper-linux.AppImage",
 } as const;
 
+// Helper function to check for compressed versions first
+async function getAvailableFile(bucket: R2Bucket, baseName: string): Promise<{ fileName: string; isCompressed: boolean } | null> {
+  // First try compressed version
+  const compressedName = `${baseName}.gz`;
+  const compressedObject = await bucket.head(compressedName);
+  if (compressedObject) {
+    return { fileName: compressedName, isCompressed: true };
+  }
+  
+  // Then try uncompressed version
+  const uncompressedObject = await bucket.head(baseName);
+  if (uncompressedObject) {
+    return { fileName: baseName, isCompressed: false };
+  }
+  
+  return null;
+}
+
 export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
@@ -45,11 +63,20 @@ export default {
         );
       }
 
-      const fileName = DOWNLOAD_FILES[platform as keyof typeof DOWNLOAD_FILES];
+      const baseName = DOWNLOAD_FILES[platform as keyof typeof DOWNLOAD_FILES];
 
       try {
-        // Check if file exists in R2
-        const object = await env.DOWNLOADS.head(fileName);
+        // Check for available file (compressed or uncompressed)
+        const fileInfo = await getAvailableFile(env.DOWNLOADS, baseName);
+        if (!fileInfo) {
+          return Response.json(
+            { error: "Download file not found" },
+            { status: 404, headers: corsHeaders }
+          );
+        }
+
+        // Get file metadata
+        const object = await env.DOWNLOADS.head(fileInfo.fileName);
         if (!object) {
           return Response.json(
             { error: "Download file not found" },
@@ -63,9 +90,11 @@ export default {
         return Response.json(
           {
             platform,
-            fileName,
+            fileName: fileInfo.isCompressed ? baseName : fileInfo.fileName, // Return original name for user
+            actualFileName: fileInfo.fileName, // Internal file name (may be compressed)
             downloadUrl,
             fileSize: object.size,
+            isCompressed: fileInfo.isCompressed,
             expiresIn: 3600,
           },
           { headers: corsHeaders }
@@ -87,22 +116,37 @@ export default {
         return new Response("Invalid platform", { status: 400 });
       }
 
-      const fileName = DOWNLOAD_FILES[platform as keyof typeof DOWNLOAD_FILES];
+      const baseName = DOWNLOAD_FILES[platform as keyof typeof DOWNLOAD_FILES];
 
       try {
+        // Check for available file (compressed or uncompressed)
+        const fileInfo = await getAvailableFile(env.DOWNLOADS, baseName);
+        if (!fileInfo) {
+          return new Response("File not found", { status: 404 });
+        }
+
         // Get file from R2
-        const object = await env.DOWNLOADS.get(fileName);
+        const object = await env.DOWNLOADS.get(fileInfo.fileName);
         if (!object) {
           return new Response("File not found", { status: 404 });
         }
 
         // Set appropriate headers for file download
         const headers = new Headers();
-        headers.set("Content-Type", "application/octet-stream");
-        headers.set(
-          "Content-Disposition",
-          `attachment; filename="${fileName}"`
-        );
+        if (fileInfo.isCompressed) {
+          headers.set("Content-Type", "application/gzip");
+          headers.set("Content-Encoding", "gzip");
+          headers.set(
+            "Content-Disposition",
+            `attachment; filename="${baseName}"`  // Use original name
+          );
+        } else {
+          headers.set("Content-Type", "application/octet-stream");
+          headers.set(
+            "Content-Disposition",
+            `attachment; filename="${fileInfo.fileName}"`
+          );
+        }
         headers.set("Content-Length", object.size.toString());
 
         // Add CORS headers
