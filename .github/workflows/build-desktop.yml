@@ -124,7 +124,6 @@ jobs:
           version: "latest"
           enable-cache: true
 
-   
       - name: Setup Python and dependencies
         run: |
           cd packages/desktop
@@ -135,8 +134,6 @@ jobs:
         run: |
           cd packages/desktop
           uv add --dev pyinstaller
-
-  
 
       - name: Create placeholder icon files (if not exist)
         shell: bash
