@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 # Get the directory containing this spec file
-spec_root = Path(__name__).parent
+spec_root = Path(__file__).parent
 
 block_cipher = None
 

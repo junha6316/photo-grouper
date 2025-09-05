@@ -141,19 +141,24 @@ jobs:
           mkdir -p assets
           # Create placeholder icons if they don't exist
           if [ ! -f "assets/icon.icns" ] && [ "${{ matrix.target }}" = "macos" ]; then
-            # Create a simple placeholder icon for macOS
+            # Create a simple placeholder icon for macOS (create a minimal valid ICNS file)
             echo "Creating placeholder icon for macOS"
-            touch assets/icon.icns
+            # Create a minimal ICNS file header
+            printf '\x69\x63\x6e\x73\x00\x00\x00\x08' > assets/icon.icns
           fi
           if [ ! -f "assets/icon.ico" ] && [ "${{ matrix.target }}" = "windows" ]; then
-            # Create a simple placeholder icon for Windows  
+            # Create a simple placeholder icon for Windows (create a minimal valid ICO file)
             echo "Creating placeholder icon for Windows"
-            touch assets/icon.ico
+            # Create a minimal ICO file header
+            printf '\x00\x00\x01\x00\x01\x00\x10\x10\x00\x00\x00\x00\x00\x00\x28\x01\x00\x00\x16\x00\x00\x00' > assets/icon.ico
+            # Add minimal bitmap data (40 bytes for header + 64 bytes for image data + 32 bytes for mask)
+            dd if=/dev/zero bs=136 count=1 >> assets/icon.ico 2>/dev/null || true
           fi
           if [ ! -f "assets/icon.png" ] && [ "${{ matrix.target }}" = "linux" ]; then
             # Create a simple placeholder icon for Linux
             echo "Creating placeholder icon for Linux"
-            touch assets/icon.png
+            # Create a minimal 1x1 PNG file
+            printf '\x89\x50\x4E\x47\x0D\x0A\x1A\x0A\x00\x00\x00\x0D\x49\x48\x44\x52\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1F\x15\xC4\x89\x00\x00\x00\x0A\x49\x44\x41\x54\x78\x9C\x63\x00\x01\x00\x00\x05\x00\x01\x0D\x0A\x2D\xB4\x00\x00\x00\x00\x49\x45\x4E\x44\xAE\x42\x60\x82' > assets/icon.png
           fi
 
       - name: Build application
