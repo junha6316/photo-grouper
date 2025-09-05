@@ -134,18 +134,18 @@ jobs:
         run: |
           # Upload macOS build
           if [ -f "artifacts/macos-build/photo-grouper-macos.dmg" ]; then
-            wrangler r2 object put photo-grouper-downloads/photo-grouper-macos.dmg \
+            wrangler r2 object put --reomte photo-grouper-downloads/photo-grouper-macos.dmg \
               --file artifacts/macos-build/photo-grouper-macos.dmg \
               --content-type application/octet-stream
-              --remote true
+              
           fi
 
           # Upload Windows build  
           if [ -f "artifacts/windows-build/photo-grouper-windows.exe" ]; then
-            wrangler r2 object put photo-grouper-downloads/photo-grouper-windows.exe \
+            wrangler r2 object put --reomte photo-grouper-downloads/photo-grouper-windows.exe \
               --file artifacts/windows-build/photo-grouper-windows.exe \
               --content-type application/octet-stream
-              --remote true
+
           fi
 
       - name: Clean up old artifacts (optional)
