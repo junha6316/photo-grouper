@@ -106,11 +106,25 @@ jobs:
           cd packages/desktop
           ${{ matrix.build_command }}
 
+      - name: Compress build artifacts
+        shell: bash
+        run: |
+          cd packages/desktop
+          if [ -f "${{ matrix.artifact }}" ]; then
+            echo "Original file size: $(stat -f%z "${{ matrix.artifact }}" 2>/dev/null || stat -c%s "${{ matrix.artifact }}" 2>/dev/null) bytes"
+            echo "Compressing ${{ matrix.artifact }}..."
+            gzip -9 "${{ matrix.artifact }}"
+            echo "Compressed to ${{ matrix.artifact }}.gz"
+            echo "Compressed file size: $(stat -f%z "${{ matrix.artifact }}.gz" 2>/dev/null || stat -c%s "${{ matrix.artifact }}.gz" 2>/dev/null) bytes"
+          else
+            echo "Warning: ${{ matrix.artifact }} not found"
+          fi
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}-build
-          path: packages/desktop/${{ matrix.artifact }}
+          path: packages/desktop/${{ matrix.artifact }}.gz
 
   deploy:
     name: Deploy to Cloudflare R2
@@ -127,37 +141,13 @@ jobs:
       - name: Install Wrangler CLI
         run: npm install -g wrangler
 
-      - name: Check file sizes and compress if needed
-        shell: bash
-        run: |
-          # Function to check and compress large files
-          compress_if_large() {
-            local file=$1
-            local max_size=314572800  # 300MB in bytes
-            
-            if [ -f "$file" ]; then
-              local size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)
-              echo "File $file size: $size bytes"
-              
-              if [ $size -gt $max_size ]; then
-                echo "File $file is larger than 300MB, compressing..."
-                gzip -9 "$file"
-                echo "Compressed to $(basename "$file").gz"
-              fi
-            fi
-          }
-          
-          # Check and compress files if they exist
-          compress_if_large "artifacts/macos-build/photo-grouper-macos.dmg"
-          compress_if_large "artifacts/windows-build/photo-grouper-windows.exe"
-
       - name: Upload to Cloudflare R2
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          # Upload macOS build (check for both compressed and uncompressed)
+          # Upload compressed macOS build
           if [ -f "artifacts/macos-build/photo-grouper-macos.dmg.gz" ]; then
             echo "Uploading compressed macOS build..."
             wrangler r2 object put photo-grouper-downloads/photo-grouper-macos.dmg.gz \
@@ -166,8 +156,7 @@ jobs:
               --remote
           fi
 
-
-          # Upload Windows build (check for both compressed and uncompressed)
+          # Upload compressed Windows build
           if [ -f "artifacts/windows-build/photo-grouper-windows.exe.gz" ]; then
             echo "Uploading compressed Windows build..."
             wrangler r2 object put photo-grouper-downloads/photo-grouper-windows.exe.gz \
@@ -176,7 +165,6 @@ jobs:
               --remote
           fi
 
-
       - name: Clean up old artifacts (optional)
         shell: bash
         env:
@@ -184,14 +172,6 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           echo "Build completed and uploaded to R2"
-          echo "Files available at:"
-          if [ -f "artifacts/macos-build/photo-grouper-macos.dmg.gz" ]; then
-            echo "- macOS: photo-grouper-macos.dmg.gz (compressed)"
-          else
-            echo "- macOS: photo-grouper-macos.dmg"
-          fi
-          if [ -f "artifacts/windows-build/photo-grouper-windows.exe.gz" ]; then
-            echo "- Windows: photo-grouper-windows.exe.gz (compressed)"
-          else
-            echo "- Windows: photo-grouper-windows.exe"
-          fi
+          echo "All files are compressed for optimal transfer:"
+          echo "- macOS: photo-grouper-macos.dmg.gz"
+          echo "- Windows: photo-grouper-windows.exe.gz"
