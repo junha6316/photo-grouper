@@ -55,61 +55,6 @@ jobs:
               # Move and rename the executable
               mv "dist/Photo Grouper.exe" "photo-grouper-windows.exe"
 
-          - os: ubuntu-latest
-            target: linux
-            artifact: photo-grouper-linux.AppImage
-            build_command: |
-              # Install AppImage tools
-              sudo apt-get update
-              sudo apt-get install -y fuse libfuse2
-              wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-              chmod +x appimagetool-x86_64.AppImage
-
-              # Build with PyInstaller using spec file (but modify for Linux)
-              # Create a Linux-specific spec file
-              cp ./photo-grouper.spec photo-grouper-linux.spec
-              sed -i "s/name='Photo Grouper'/name='photo-grouper'/" photo-grouper-linux.spec
-              sed -i "s/console=False/console=False/" photo-grouper-linux.spec
-              uv run pyinstaller ./photo-grouper-linux.spec
-
-              # Create AppDir structure
-              mkdir -p AppDir/usr/bin
-              mkdir -p AppDir/usr/share/applications
-              mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-
-              # Copy executable
-              cp dist/photo-grouper AppDir/usr/bin/
-
-              # Create .desktop file
-              cat > AppDir/photo-grouper.desktop << EOF
-              [Desktop Entry]
-              Type=Application
-              Name=Photo Grouper
-              Exec=photo-grouper
-              Icon=photo-grouper
-              Comment=Intelligent photo organization using machine learning
-              Categories=Graphics;Photography;
-              EOF
-
-              # Copy icon (if exists)
-              if [ -f "assets/icon.png" ]; then
-                cp assets/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/photo-grouper.png
-                cp assets/icon.png AppDir/photo-grouper.png
-              fi
-
-              # Copy desktop file to AppDir root
-              cp AppDir/photo-grouper.desktop AppDir/
-
-              # Create AppRun
-              cat > AppDir/AppRun << 'EOF'
-              #!/bin/bash
-              cd "$(dirname "$0")"
-              exec ./usr/bin/photo-grouper "$@"
-              EOF
-              chmod +x AppDir/AppRun
-
-              # Build AppImage
-              ./appimagetool-x86_64.AppImage AppDir photo-grouper-linux.AppImage
 
     steps:
       - name: Checkout code
@@ -153,12 +98,6 @@ jobs:
             printf '\x00\x00\x01\x00\x01\x00\x10\x10\x00\x00\x00\x00\x00\x00\x28\x01\x00\x00\x16\x00\x00\x00' > assets/icon.ico
             # Add minimal bitmap data (40 bytes for header + 64 bytes for image data + 32 bytes for mask)
             dd if=/dev/zero bs=136 count=1 >> assets/icon.ico 2>/dev/null || true
-          fi
-          if [ ! -f "assets/icon.png" ] && [ "${{ matrix.target }}" = "linux" ]; then
-            # Create a simple placeholder icon for Linux
-            echo "Creating placeholder icon for Linux"
-            # Create a minimal 1x1 PNG file
-            printf '\x89\x50\x4E\x47\x0D\x0A\x1A\x0A\x00\x00\x00\x0D\x49\x48\x44\x52\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1F\x15\xC4\x89\x00\x00\x00\x0A\x49\x44\x41\x54\x78\x9C\x63\x00\x01\x00\x00\x05\x00\x01\x0D\x0A\x2D\xB4\x00\x00\x00\x00\x49\x45\x4E\x44\xAE\x42\x60\x82' > assets/icon.png
           fi
 
       - name: Build application
@@ -208,12 +147,6 @@ jobs:
               --content-type application/octet-stream
           fi
 
-          # Upload Linux build
-          if [ -f "artifacts/linux-build/photo-grouper-linux.AppImage" ]; then
-            wrangler r2 object put photo-grouper-downloads/photo-grouper-linux.AppImage \
-              --file artifacts/linux-build/photo-grouper-linux.AppImage \
-              --content-type application/octet-stream
-          fi
 
       - name: Clean up old artifacts (optional)
         shell: bash
@@ -224,5 +157,4 @@ jobs:
           echo "Build completed and uploaded to R2"
           echo "Files available at:"
           echo "- macOS: photo-grouper-macos.dmg"
-          echo "- Windows: photo-grouper-windows.exe" 
-          echo "- Linux: photo-grouper-linux.AppImage"
+          echo "- Windows: photo-grouper-windows.exe"
