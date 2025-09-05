@@ -9,20 +9,23 @@ const DOWNLOAD_FILES = {
 } as const;
 
 // Helper function to check for compressed versions first
-async function getAvailableFile(bucket: R2Bucket, baseName: string): Promise<{ fileName: string; isCompressed: boolean } | null> {
+async function getAvailableFile(
+  bucket: R2Bucket,
+  baseName: string
+): Promise<{ fileName: string; isCompressed: boolean } | null> {
   // First try compressed version
   const compressedName = `${baseName}.gz`;
   const compressedObject = await bucket.head(compressedName);
   if (compressedObject) {
     return { fileName: compressedName, isCompressed: true };
   }
-  
+
   // Then try uncompressed version
   const uncompressedObject = await bucket.head(baseName);
   if (uncompressedObject) {
     return { fileName: baseName, isCompressed: false };
   }
-  
+
   return null;
 }
 
@@ -138,7 +141,7 @@ export default {
           headers.set("Content-Encoding", "gzip");
           headers.set(
             "Content-Disposition",
-            `attachment; filename="${baseName}"`  // Use original name
+            `attachment; filename="${baseName}"` // Use original name
           );
         } else {
           headers.set("Content-Type", "application/octet-stream");
