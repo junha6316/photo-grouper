@@ -127,22 +127,60 @@ jobs:
       - name: Install Wrangler CLI
         run: npm install -g wrangler
 
+      - name: Check file sizes and compress if needed
+        shell: bash
+        run: |
+          # Function to check and compress large files
+          compress_if_large() {
+            local file=$1
+            local max_size=314572800  # 300MB in bytes
+            
+            if [ -f "$file" ]; then
+              local size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)
+              echo "File $file size: $size bytes"
+              
+              if [ $size -gt $max_size ]; then
+                echo "File $file is larger than 300MB, compressing..."
+                gzip -9 "$file"
+                echo "Compressed to $(basename "$file").gz"
+              fi
+            fi
+          }
+          
+          # Check and compress files if they exist
+          compress_if_large "artifacts/macos-build/photo-grouper-macos.dmg"
+          compress_if_large "artifacts/windows-build/photo-grouper-windows.exe"
+
       - name: Upload to Cloudflare R2
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          # Upload macOS build
-          if [ -f "artifacts/macos-build/photo-grouper-macos.dmg" ]; then
+          # Upload macOS build (check for both compressed and uncompressed)
+          if [ -f "artifacts/macos-build/photo-grouper-macos.dmg.gz" ]; then
+            echo "Uploading compressed macOS build..."
+            wrangler r2 object put photo-grouper-downloads/photo-grouper-macos.dmg.gz \
+              --file artifacts/macos-build/photo-grouper-macos.dmg.gz \
+              --content-type application/gzip \
+              --remote
+          elif [ -f "artifacts/macos-build/photo-grouper-macos.dmg" ]; then
+            echo "Uploading uncompressed macOS build..."
             wrangler r2 object put photo-grouper-downloads/photo-grouper-macos.dmg \
               --file artifacts/macos-build/photo-grouper-macos.dmg \
               --content-type application/octet-stream \
               --remote
           fi
 
-          # Upload Windows build  
-          if [ -f "artifacts/windows-build/photo-grouper-windows.exe" ]; then
+          # Upload Windows build (check for both compressed and uncompressed)
+          if [ -f "artifacts/windows-build/photo-grouper-windows.exe.gz" ]; then
+            echo "Uploading compressed Windows build..."
+            wrangler r2 object put photo-grouper-downloads/photo-grouper-windows.exe.gz \
+              --file artifacts/windows-build/photo-grouper-windows.exe.gz \
+              --content-type application/gzip \
+              --remote
+          elif [ -f "artifacts/windows-build/photo-grouper-windows.exe" ]; then
+            echo "Uploading uncompressed Windows build..."
             wrangler r2 object put photo-grouper-downloads/photo-grouper-windows.exe \
               --file artifacts/windows-build/photo-grouper-windows.exe \
               --content-type application/octet-stream \
@@ -158,5 +196,13 @@ jobs:
         run: |
           echo "Build completed and uploaded to R2"
           echo "Files available at:"
-          echo "- macOS: photo-grouper-macos.dmg"
-          echo "- Windows: photo-grouper-windows.exe"
+          if [ -f "artifacts/macos-build/photo-grouper-macos.dmg.gz" ]; then
+            echo "- macOS: photo-grouper-macos.dmg.gz (compressed)"
+          else
+            echo "- macOS: photo-grouper-macos.dmg"
+          fi
+          if [ -f "artifacts/windows-build/photo-grouper-windows.exe.gz" ]; then
+            echo "- Windows: photo-grouper-windows.exe.gz (compressed)"
+          else
+            echo "- Windows: photo-grouper-windows.exe"
+          fi

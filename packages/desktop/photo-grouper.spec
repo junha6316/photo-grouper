@@ -43,6 +43,16 @@ excludes = [
     'notebook',
     'pytest',
     'setuptools',
+    'scipy.tests',
+    'numpy.tests',
+    'torch.test',
+    'torchvision.datasets',
+    'sklearn.datasets',
+    'pandas',
+    'matplotlib.pyplot',
+    'seaborn.tests',
+    'PIL.ImageQt',
+    'PIL.ImageTk',
 ]
 
 a = Analysis(
@@ -73,9 +83,13 @@ exe = EXE(
     name='Photo Grouper',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,
+    strip=True,
     upx=True,
-    upx_exclude=[],
+    upx_exclude=[
+        'vcruntime140.dll',
+        'msvcp140.dll',
+        'ucrtbase.dll',
+    ],
     runtime_tmpdir=None,
     console=False,  # Set to True for debugging
     disable_windowed_traceback=False,
