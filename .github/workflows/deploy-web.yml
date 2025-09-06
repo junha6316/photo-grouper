@@ -42,7 +42,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd packages/web
-          pnpm install --frozen-lockfile
+          pnpm install
 
       - name: Build web application
         run: |
