@@ -112,59 +112,8 @@ jobs:
       - name: Compress build artifacts
         shell: bash
         run: |
-          cd packages/desktop
-          if [ -f "${{ matrix.artifact }}" ]; then
-            echo "Original file size: $(stat -f%z "${{ matrix.artifact }}" 2>/dev/null || stat -c%s "${{ matrix.artifact }}" 2>/dev/null) bytes"
-            
-            # Try multiple compression methods and choose the best one
-            echo "Testing compression methods..."
-            
-            # Method 1: gzip -9 (current)
-            cp "${{ matrix.artifact }}" "${{ matrix.artifact }}.temp1"
-            gzip -9 "${{ matrix.artifact }}.temp1"
-            gzip_size=$(stat -f%z "${{ matrix.artifact }}.temp1.gz" 2>/dev/null || stat -c%s "${{ matrix.artifact }}.temp1.gz" 2>/dev/null)
-            echo "gzip -9 size: $gzip_size bytes"
-            
-            # Method 2: xz -9 (better compression)
-            if command -v xz >/dev/null 2>&1; then
-              cp "${{ matrix.artifact }}" "${{ matrix.artifact }}.temp2"
-              xz -9 "${{ matrix.artifact }}.temp2"
-              xz_size=$(stat -f%z "${{ matrix.artifact }}.temp2.xz" 2>/dev/null || stat -c%s "${{ matrix.artifact }}.temp2.xz" 2>/dev/null)
-              echo "xz -9 size: $xz_size bytes"
-              
-              # Choose the better compression
-              if [ "$xz_size" -lt "$gzip_size" ]; then
-                echo "Using xz compression (better ratio)"
-                mv "${{ matrix.artifact }}.temp2.xz" "${{ matrix.artifact }}.xz"
-                rm -f "${{ matrix.artifact }}.temp1.gz"
-                echo "Compressed to ${{ matrix.artifact }}.xz"
-                echo "Final compressed size: $xz_size bytes"
-                echo "COMPRESSION_EXT=.xz" >> $GITHUB_ENV
-              else
-                echo "Using gzip compression"
-                mv "${{ matrix.artifact }}.temp1.gz" "${{ matrix.artifact }}.gz"
-                rm -f "${{ matrix.artifact }}.temp2.xz"
-                echo "Compressed to ${{ matrix.artifact }}.gz"
-                echo "Final compressed size: $gzip_size bytes"
-                echo "COMPRESSION_EXT=.gz" >> $GITHUB_ENV
-              fi
-            else
-              echo "xz not available, using gzip"
-              mv "${{ matrix.artifact }}.temp1.gz" "${{ matrix.artifact }}.gz"
-              echo "Compressed to ${{ matrix.artifact }}.gz"
-              echo "Final compressed size: $gzip_size bytes"
-              echo "COMPRESSION_EXT=.gz" >> $GITHUB_ENV
-            fi
-            
-            # Calculate compression ratio
-            original_size=$(stat -f%z "${{ matrix.artifact }}" 2>/dev/null || stat -c%s "${{ matrix.artifact }}" 2>/dev/null)
-            final_size=$([ "$COMPRESSION_EXT" = ".xz" ] && echo $xz_size || echo $gzip_size)
-            ratio=$(echo "scale=2; ($original_size - $final_size) * 100 / $original_size" | bc -l 2>/dev/null || echo "N/A")
-            echo "Compression ratio: ${ratio}%"
-            
-          else
-            echo "Warning: ${{ matrix.artifact }} not found"
-          fi
+          chmod +x .github/scripts/compress-artifact.sh
+          .github/scripts/compress-artifact.sh "${{ matrix.artifact }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -184,83 +133,48 @@ jobs:
         with:
           path: artifacts
 
-      - name: Install Wrangler CLI
-        run: npm install -g wrangler
+      - name: Install tools
+        run: |
+          npm install -g wrangler
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip -q awscliv2.zip
+          sudo ./aws/install
 
       - name: Upload to Cloudflare R2
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
-          # Function to upload file with appropriate content-type
-          upload_file() {
-            local file_path="$1"
-            local remote_path="$2"
-            
-            if [ -f "$file_path" ]; then
-              echo "Uploading $file_path..."
-              
-              # Determine content-type based on file extension
-              if [[ "$file_path" == *.gz ]]; then
-                content_type="application/gzip"
-              elif [[ "$file_path" == *.xz ]]; then
-                content_type="application/x-xz"
-              else
-                content_type="application/octet-stream"
-              fi
-              
-              wrangler r2 object put "$remote_path" \
-                --file "$file_path" \
-                --content-type "$content_type" \
-                --remote
-                
-              # Get file size for logging
-              file_size=$(stat -f%z "$file_path" 2>/dev/null || stat -c%s "$file_path" 2>/dev/null)
-              echo "Uploaded $file_path ($file_size bytes) to $remote_path"
-            else
-              echo "File not found: $file_path"
-            fi
-          }
+          chmod +x .github/scripts/upload-to-r2.sh
           
-          # Upload macOS build (check both .gz and .xz)
-          if [ -f "artifacts/macos-build/photo-grouper-macos.dmg.gz" ]; then
-            upload_file "artifacts/macos-build/photo-grouper-macos.dmg.gz" "photo-grouper-downloads/photo-grouper-macos.dmg.gz"
-          elif [ -f "artifacts/macos-build/photo-grouper-macos.dmg.xz" ]; then
-            upload_file "artifacts/macos-build/photo-grouper-macos.dmg.xz" "photo-grouper-downloads/photo-grouper-macos.dmg.xz"
-          else
-            echo "No macOS build artifact found"
-          fi
-
-          # Upload Windows build (check both .gz and .xz)
-          if [ -f "artifacts/windows-build/photo-grouper-windows.exe.gz" ]; then
-            upload_file "artifacts/windows-build/photo-grouper-windows.exe.gz" "photo-grouper-downloads/photo-grouper-windows.exe.gz"
-          elif [ -f "artifacts/windows-build/photo-grouper-windows.exe.xz" ]; then
-            upload_file "artifacts/windows-build/photo-grouper-windows.exe.xz" "photo-grouper-downloads/photo-grouper-windows.exe.xz"
-          else
-            echo "No Windows build artifact found"
-          fi
-
-      - name: Build summary and cleanup
-        shell: bash
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          echo "Build completed and uploaded to R2"
-          echo "Files are compressed using the best available compression method:"
-          
-          # List uploaded files with sizes
-          echo "Uploaded files:"
-          for file in artifacts/*/photo-grouper-*.*; do
+          # Upload macOS build
+          for file in artifacts/macos-build/photo-grouper-macos.dmg.*; do
             if [ -f "$file" ]; then
-              size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)
-              echo "- $(basename "$file"): ${size} bytes"
+              filename=$(basename "$file")
+              .github/scripts/upload-to-r2.sh "$file" "$filename"
+              break
             fi
           done
           
-          echo ""
-          echo "Compression methods used:"
-          echo "- XZ (.xz): Better compression ratio, slower decompression"
-          echo "- GZIP (.gz): Standard compression, faster decompression"
-          echo "- Files are automatically decompressed by the web interface"
+          # Upload Windows build
+          for file in artifacts/windows-build/photo-grouper-windows.exe.*; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              .github/scripts/upload-to-r2.sh "$file" "$filename"
+              break
+            fi
+          done
+
+      - name: Build summary
+        run: |
+          echo "✅ Build completed and uploaded to R2"
+          echo "📦 Uploaded files:"
+          for file in artifacts/*/photo-grouper-*.*; do
+            if [ -f "$file" ]; then
+              size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)
+              echo "  - $(basename "$file"): ${size} bytes"
+            fi
+          done
