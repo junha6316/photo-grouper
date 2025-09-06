@@ -12,15 +12,30 @@ const DOWNLOAD_FILES = {
 async function getAvailableFile(
   bucket: R2Bucket,
   baseName: string
-): Promise<{ fileName: string; isCompressed: boolean } | null> {
-  // First try compressed version
-  const compressedName = `${baseName}.gz`;
-  const compressedObject = await bucket.head(compressedName);
-  if (compressedObject) {
-    return { fileName: compressedName, isCompressed: true };
+): Promise<{
+  fileName: string;
+  isCompressed: boolean;
+  compressionType?: string;
+} | null> {
+  // Try different compression formats in order of preference
+  const compressionFormats = [
+    { ext: ".xz", type: "xz" },
+    { ext: ".gz", type: "gzip" },
+  ];
+
+  for (const format of compressionFormats) {
+    const compressedName = `${baseName}${format.ext}`;
+    const compressedObject = await bucket.head(compressedName);
+    if (compressedObject) {
+      return {
+        fileName: compressedName,
+        isCompressed: true,
+        compressionType: format.type,
+      };
+    }
   }
 
-  // Then try uncompressed version
+  // Finally try uncompressed version
   const uncompressedObject = await bucket.head(baseName);
   if (uncompressedObject) {
     return { fileName: baseName, isCompressed: false };
@@ -137,8 +152,14 @@ export default {
         // Set appropriate headers for file download
         const headers = new Headers();
         if (fileInfo.isCompressed) {
-          headers.set("Content-Type", "application/gzip");
-          headers.set("Content-Encoding", "gzip");
+          // Set content-type and encoding based on compression type
+          if (fileInfo.compressionType === "xz") {
+            headers.set("Content-Type", "application/x-xz");
+            headers.set("Content-Encoding", "xz");
+          } else {
+            headers.set("Content-Type", "application/gzip");
+            headers.set("Content-Encoding", "gzip");
+          }
           headers.set(
             "Content-Disposition",
             `attachment; filename="${baseName}"` // Use original name

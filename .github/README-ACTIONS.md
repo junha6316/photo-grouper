@@ -52,11 +52,11 @@ If icons don't exist, the workflow will create placeholder files.
 
 After successful build, these files are uploaded to R2:
 
-- `photo-grouper-macos.dmg` (or `photo-grouper-macos.dmg.gz` if compressed)
-- `photo-grouper-windows.exe` (or `photo-grouper-windows.exe.gz` if compressed)
-- `photo-grouper-linux.AppImage` (or `photo-grouper-linux.AppImage.gz` if compressed)
+- `photo-grouper-macos.dmg`
+- `photo-grouper-windows.exe`
+- `photo-grouper-linux.AppImage`
 
-**File Size Handling**: Files larger than 300MB are automatically compressed with gzip before upload to comply with Wrangler's file size limits. The web download service automatically detects and serves both compressed and uncompressed files.
+These match the expected file names in the web download page.
 
 ## 🔧 Customization
 
@@ -86,18 +86,11 @@ Edit `packages/desktop/photo-grouper.spec` to:
 2. Verify all dependencies are in `pyproject.toml`
 3. Ensure PyInstaller can find all modules
 
-### File Size Issues
-
-1. **"Wrangler only supports uploading files up to 300 MiB"**: Files are automatically compressed if they exceed 300MB
-2. Check build logs to see if compression was applied
-3. Large PyTorch/ML dependencies can cause size issues - consider optimizing excludes in `photo-grouper.spec`
-
 ### Missing Files
 
 1. Verify the R2 bucket exists
 2. Check Cloudflare API token permissions
 3. Ensure secrets are set correctly
-4. Check if files were compressed (look for `.gz` extensions in logs)
 
 ### Icon Issues
 
