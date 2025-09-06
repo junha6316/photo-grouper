@@ -87,11 +87,18 @@ export default {
         // Check for available file (compressed or uncompressed)
         const fileInfo = await getAvailableFile(env.DOWNLOADS, baseName);
         if (!fileInfo) {
+          console.log(
+            `File not found for platform ${platform}, looking for: ${baseName}`
+          );
           return Response.json(
             { error: "Download file not found" },
             { status: 404, headers: corsHeaders }
           );
         }
+        
+        console.log(
+          `Found file for ${platform}: ${fileInfo.fileName} (compressed: ${fileInfo.isCompressed})`
+        );
 
         // Get file metadata
         const object = await env.DOWNLOADS.head(fileInfo.fileName);
@@ -105,18 +112,23 @@ export default {
         // Generate download URL that points back to our worker
         const downloadUrl = `${url.origin}/api/download-file?platform=${platform}`;
 
-        return Response.json(
-          {
-            platform,
-            fileName: fileInfo.isCompressed ? baseName : fileInfo.fileName, // Return original name for user
-            actualFileName: fileInfo.fileName, // Internal file name (may be compressed)
-            downloadUrl,
-            fileSize: object.size,
-            isCompressed: fileInfo.isCompressed,
-            expiresIn: 3600,
-          },
-          { headers: corsHeaders }
+        const response = {
+          platform,
+          fileName: fileInfo.isCompressed ? baseName : fileInfo.fileName, // Return original name for user
+          actualFileName: fileInfo.fileName, // Internal file name (may be compressed)
+          downloadUrl,
+          fileSize: object.size,
+          isCompressed: fileInfo.isCompressed,
+          compressionType: fileInfo.compressionType,
+          expiresIn: 3600,
+        };
+
+        console.log(
+          `Download info for ${platform}:`,
+          JSON.stringify(response, null, 2)
         );
+
+        return Response.json(response, { headers: corsHeaders });
       } catch (error) {
         console.error("Error generating download URL:", error);
         return Response.json(
