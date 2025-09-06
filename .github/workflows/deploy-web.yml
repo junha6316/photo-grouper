@@ -86,7 +86,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd packages/web
-          pnpm install --no-frozen-lockfile
+          pnpm install
 
       - name: Run linter
         run: |
