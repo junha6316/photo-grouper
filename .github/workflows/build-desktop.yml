@@ -184,11 +184,11 @@ jobs:
               
               # Show mapping for web downloads
               case "$filename" in
-                *.dmg.*)
-                  echo "    → Web download as: photo-grouper-macos.dmg"
+                *.dmg.gz)
+                  echo "    → Web download as: photo-grouper-macos.dmg (auto-decompressed)"
                   ;;
-                *.exe.*)
-                  echo "    → Web download as: photo-grouper-windows.exe"
+                *.exe.gz)
+                  echo "    → Web download as: photo-grouper-windows.exe (auto-decompressed)"
                   ;;
               esac
             fi

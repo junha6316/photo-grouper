@@ -18,8 +18,8 @@ async function getAvailableFile(
   compressionType?: string;
 } | null> {
   // Try different compression formats in order of preference
+  // Only use gzip for web compatibility
   const compressionFormats = [
-    { ext: ".xz", type: "xz" },
     { ext: ".gz", type: "gzip" },
   ];
 
@@ -163,18 +163,20 @@ export default {
 
         // Set appropriate headers for file download
         const headers = new Headers();
-        if (fileInfo.isCompressed) {
-          // Set content-type and encoding based on compression type
-          if (fileInfo.compressionType === "xz") {
-            headers.set("Content-Type", "application/x-xz");
-            headers.set("Content-Encoding", "xz");
-          } else {
-            headers.set("Content-Type", "application/gzip");
-            headers.set("Content-Encoding", "gzip");
-          }
+        if (fileInfo.isCompressed && fileInfo.compressionType === "gzip") {
+          // For gzip files, let browser automatically decompress
+          headers.set("Content-Type", "application/octet-stream");
+          headers.set("Content-Encoding", "gzip");
           headers.set(
             "Content-Disposition",
-            `attachment; filename="${baseName}"` // Use original name
+            `attachment; filename="${baseName}"` // Use original filename
+          );
+        } else if (fileInfo.isCompressed) {
+          // For other compression types (like xz), download as-is
+          headers.set("Content-Type", "application/octet-stream");
+          headers.set(
+            "Content-Disposition",
+            `attachment; filename="${fileInfo.fileName}"` // Use compressed filename
           );
         } else {
           headers.set("Content-Type", "application/octet-stream");

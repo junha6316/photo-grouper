@@ -18,10 +18,8 @@ upload_to_r2() {
     # Determine content-type
     if [[ "$file_path" == *.gz ]]; then
         content_type="application/gzip"
-        content_encoding="--content-encoding gzip"
-    elif [[ "$file_path" == *.xz ]]; then
-        content_type="application/x-xz"
-        content_encoding="--content-encoding xz"
+        # Don't set content-encoding here - let the web worker handle it
+        content_encoding=""
     else
         content_type="application/octet-stream"
         content_encoding=""
