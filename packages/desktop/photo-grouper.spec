@@ -63,7 +63,7 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
     # Additional optimization options
-    optimize=0,  # Python bytecode optimization
+    optimize=1,  # Python bytecode optimization
 )
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
@@ -106,7 +106,7 @@ exe = EXE(
          else str(spec_root.parent.parent / 'assets' / 'icon.icns') if sys.platform == 'darwin'
          else None,
     # Additional size optimization options
-    optimize=0,  # Bytecode optimization level
+    optimize=1,  # Bytecode optimization level
     noupx=False,  # Enable UPX (set to True to disable if issues occur)
 )
 
