@@ -5,11 +5,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "photo-grouper-web",
-  "main": "worker/index.ts",
   "compatibility_date": "2025-09-02",
-  "assets": {
-    "not_found_handling": "single-page-application"
-  },
+  "pages_build_output_dir": "dist",
   "observability": {
     "enabled": true
   },

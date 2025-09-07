@@ -15,6 +15,7 @@ datas = [
     (str(spec_root / 'infra'), 'infra'),
     (str(spec_root / 'utils'), 'utils'),
 ]
+excludes= []
 
 # Hidden imports for PyTorch and other dependencies
 hiddenimports = [
@@ -23,6 +24,11 @@ hiddenimports = [
     'PIL',
     'PIL._tkinter_finder',
     'numpy',
+    'numpy._core',
+    'numpy._core.multiarray',
+    'numpy._core.overrides',
+    'numpy.core',
+    'numpy.core.multiarray',
     'sklearn',
     'faiss',
     'networkx',
@@ -35,60 +41,7 @@ hiddenimports = [
 ]
 
 # Exclude unnecessary modules to reduce size
-excludes = [
-    'tkinter',
-    'matplotlib',
-    'IPython',
-    'jupyter',
-    'notebook',
-    'pytest',
-    'setuptools',
-    'scipy.tests',
-    'numpy.tests',
-    'torch.test',
-    'torch.testing',
-    'torch.utils.tensorboard',
-    'torch.distributed',
-    'torch.nn.quantized',
-    'torch.jit',
-    'torch.onnx',
-    'torch.backends.cudnn',
-    'torch.backends.mkldnn',
-    'torchvision.datasets',
-    'torchvision.models.detection',
-    'torchvision.models.segmentation',
-    'torchvision.models.video',
-    'torchvision.io',
-    'sklearn.datasets',
-    'sklearn.tests',
-    'pandas',
-    'matplotlib.pyplot',
-    'seaborn.tests',
-    'PIL.ImageQt',
-    'PIL.ImageTk',
-    'PIL.ImageShow',
-    'PIL.ImageDraw2',
-    'PIL.ImageCms',
-    'PIL.ImageMath',
-    'PIL.ImageOps',
-    'PIL.ImagePath',
-    'PIL.ImageSequence',
-    'PIL.ImageStat',
-    'PIL.ImageWin',
-    'doctest',
-    'pdb',
-    'unittest',
-    'xml',
-    'xmlrpc',
-    'email',
-    'http',
-    'urllib3',
-    'requests',
-    'certifi',
-    'charset_normalizer',
-    'idna',
-    'multiprocessing',
-]
+
 
 a = Analysis(
     ['app.py'],
@@ -110,7 +63,7 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
     # Additional optimization options
-    optimize=2,  # Python bytecode optimization
+    optimize=0,  # Python bytecode optimization
 )
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
@@ -153,7 +106,7 @@ exe = EXE(
          else str(spec_root.parent.parent / 'assets' / 'icon.icns') if sys.platform == 'darwin'
          else None,
     # Additional size optimization options
-    optimize=2,  # Bytecode optimization level
+    optimize=0,  # Bytecode optimization level
     noupx=False,  # Enable UPX (set to True to disable if issues occur)
 )
 

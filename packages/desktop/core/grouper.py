@@ -6,17 +6,9 @@ from typing import Dict, List, Tuple
 from collections import defaultdict
 import networkx as nx
 
-# Try to import FAISS for faster similarity search
-try:
-    import faiss
-    FAISS_AVAILABLE = True
-    print("FAISS available for accelerated similarity search")
-except ImportError:
-    FAISS_AVAILABLE = False
-    print("FAISS not available, using scikit-learn for similarity search")
 
 class PhotoGrouper:
-    def __init__(self, tile_size: int = 1000, use_faiss: bool = True):
+    def __init__(self, tile_size: int = 1000, use_faiss: bool = False):
         """
         Initialize photo grouper.
         
@@ -25,7 +17,7 @@ class PhotoGrouper:
             use_faiss: Whether to use FAISS for acceleration when available
         """
         self.tile_size = tile_size
-        self.use_faiss = use_faiss and FAISS_AVAILABLE
+        self.use_faiss = use_faiss
     
     def group_by_threshold(self, embeddings: Dict[str, np.ndarray], 
                           threshold: float = 0.85, min_group_size: int = 1) -> Tuple[List[List[str]], List[float]]:
