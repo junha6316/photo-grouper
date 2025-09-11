@@ -24,6 +24,7 @@ jobs:
     strategy:
       matrix:
         include:
+          
           - os: macos-latest
             target: macos
             artifact: photo-grouper-macos.dmg
@@ -75,13 +76,15 @@ jobs:
           PIP_EXTRA_INDEX_URL: "https://download.pytorch.org/whl/cpu"
         run: |
           cd packages/desktop
-          mise install python
+          mise use python@3.12
+          uv python pin 3.12
           uv sync
 
-      - name: Install PyInstaller
+      - name: Verify Python version
         run: |
           cd packages/desktop
-          uv add --dev pyinstaller
+          python --version
+          uv python list
 
       - name: Create placeholder icon files (if not exist)
         shell: bash
