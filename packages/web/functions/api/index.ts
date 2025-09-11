@@ -9,3 +9,4 @@ export const onRequest: PagesFunction = async () => {
     { headers: corsHeaders }
   );
 };
+
