@@ -1,5 +1,5 @@
 [tools]
-python = "3.13"
+python = "3.12"
 node = "20.19"
 pnpm = "8.15.0"   # 향후 web 패키지를 위해 미리 추가
 
