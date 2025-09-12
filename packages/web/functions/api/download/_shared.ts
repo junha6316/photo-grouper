@@ -10,12 +10,15 @@ export const DOWNLOAD_FILES = {
   linux: "photo-grouper-linux.AppImage",
 } as const;
 
-// Helper function to check for compressed versions first
+// Helper function to check for compressed versions first and generate presigned URL
 export async function getAvailableFile(
   bucket: R2Bucket,
   baseName: string
 ): Promise<{
   fileName: string;
+  downloadUrl: string;
+  fileSize: number;
+  expiresIn: number;
   isCompressed: boolean;
   compressionType?: string;
 } | null> {
@@ -27,18 +30,37 @@ export async function getAvailableFile(
     const compressedName = `${baseName}${format.ext}`;
     const compressedObject = await bucket.head(compressedName);
     if (compressedObject) {
-      return {
-        fileName: compressedName,
-        isCompressed: true,
-        compressionType: format.type,
-      };
+      // Generate presigned URL - R2 automatically creates a presigned URL when you get the object
+      const r2Object = await bucket.get(compressedName);
+
+      if (r2Object) {
+        return {
+          fileName: compressedName,
+          downloadUrl: r2Object.url || "", // This is the presigned URL
+          fileSize: compressedObject.size,
+          expiresIn: 3600, // 1 hour in seconds
+          isCompressed: true,
+          compressionType: format.type,
+        };
+      }
     }
   }
 
   // Finally try uncompressed version
   const uncompressedObject = await bucket.head(baseName);
   if (uncompressedObject) {
-    return { fileName: baseName, isCompressed: false };
+    // Generate presigned URL - R2 automatically creates a presigned URL when you get the object
+    const r2Object = await bucket.get(baseName);
+
+    if (r2Object) {
+      return {
+        fileName: baseName,
+        downloadUrl: r2Object.url || "", // This is the presigned URL
+        fileSize: uncompressedObject.size,
+        expiresIn: 3600, // 1 hour in seconds
+        isCompressed: false,
+      };
+    }
   }
 
   return null;
