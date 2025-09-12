@@ -13,9 +13,7 @@ type PagesFunction<Env = unknown> = (context: {
   next: (input?: Request | string, init?: RequestInit) => Promise<Response>;
 }) => Response | Promise<Response>;
 
-export const onRequest: PagesFunction = async (
-  context: EventContext<Env, any, Record<string, unknown>>
-) => {
+export const onRequest: PagesFunction<Env> = async (context) => {
   try {
     // Handle CORS preflight requests
     if (context.request.method === "OPTIONS") {
