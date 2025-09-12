@@ -1,3 +1,5 @@
+import type { R2Bucket } from "@cloudflare/workers-types";
+
 export interface Env {
   DOWNLOADS: R2Bucket;
 }
@@ -47,4 +49,3 @@ export const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
-
