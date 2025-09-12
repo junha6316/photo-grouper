@@ -1,4 +1,14 @@
-import type { R2Bucket } from "@cloudflare/workers-types";
+// R2 Bucket type definition
+interface R2Object {
+  key: string;
+  url?: string;
+  size: number;
+}
+
+interface R2Bucket {
+  head(key: string): Promise<{ size: number; etag: string } | null>;
+  get(key: string): Promise<R2Object | null>;
+}
 
 export interface Env {
   DOWNLOADS: R2Bucket;
