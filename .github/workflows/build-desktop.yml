@@ -112,17 +112,11 @@ jobs:
           cd packages/desktop
           ${{ matrix.build_command }}
 
-      - name: Compress build artifacts
-        shell: bash
-        run: |
-          chmod +x .github/scripts/compress-artifact.sh
-          .github/scripts/compress-artifact.sh "${{ matrix.artifact }}"
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}-build
-          path: packages/desktop/${{ matrix.artifact }}${{ env.COMPRESSION_EXT }}
+          path: packages/desktop/${{ matrix.artifact }}
 
   deploy:
     name: Deploy to Cloudflare R2
@@ -158,44 +152,27 @@ jobs:
           chmod +x .github/scripts/upload-to-r2.sh
           
           # Upload macOS build
-          for file in artifacts/macos-build/photo-grouper-macos.dmg.*; do
-            if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              .github/scripts/upload-to-r2.sh "$file" "$filename"
-              break
-            fi
-          done
+          if [ -f "artifacts/macos-build/photo-grouper-macos.dmg" ]; then
+            .github/scripts/upload-to-r2.sh "artifacts/macos-build/photo-grouper-macos.dmg" "photo-grouper-macos.dmg"
+          fi
           
           # Upload Windows build
-          for file in artifacts/windows-build/photo-grouper-windows.exe.*; do
-            if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              .github/scripts/upload-to-r2.sh "$file" "$filename"
-              break
-            fi
-          done
+          if [ -f "artifacts/windows-build/photo-grouper-windows.exe" ]; then
+            .github/scripts/upload-to-r2.sh "artifacts/windows-build/photo-grouper-windows.exe" "photo-grouper-windows.exe"
+          fi
 
       - name: Build summary
         run: |
           echo "✅ Build completed and uploaded to R2"
           echo "📦 Uploaded files:"
-          for file in artifacts/*/photo-grouper-*.*; do
-            if [ -f "$file" ]; then
-              size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)
-              filename=$(basename "$file")
-              echo "  - $filename: ${size} bytes"
-              
-              # Show mapping for web downloads
-              case "$filename" in
-                *.dmg.gz)
-                  echo "    → Web download as: photo-grouper-macos.dmg (auto-decompressed)"
-                  ;;
-                *.exe.gz)
-                  echo "    → Web download as: photo-grouper-windows.exe (auto-decompressed)"
-                  ;;
-              esac
-            fi
-          done
+          if [ -f "artifacts/macos-build/photo-grouper-macos.dmg" ]; then
+            size=$(stat -f%z "artifacts/macos-build/photo-grouper-macos.dmg" 2>/dev/null || stat -c%s "artifacts/macos-build/photo-grouper-macos.dmg" 2>/dev/null)
+            echo "  - photo-grouper-macos.dmg: ${size} bytes"
+          fi
+          if [ -f "artifacts/windows-build/photo-grouper-windows.exe" ]; then
+            size=$(stat -f%z "artifacts/windows-build/photo-grouper-windows.exe" 2>/dev/null || stat -c%s "artifacts/windows-build/photo-grouper-windows.exe" 2>/dev/null)
+            echo "  - photo-grouper-windows.exe: ${size} bytes"
+          fi
           
           echo ""
           echo "🌐 Web API endpoints:"

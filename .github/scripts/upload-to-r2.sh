@@ -15,10 +15,15 @@ upload_to_r2() {
     file_size=$(stat -f%z "$file_path" 2>/dev/null || stat -c%s "$file_path" 2>/dev/null)
     echo "File size: $file_size bytes"
     
-    # Determine content-type
-    if [[ "$file_path" == *.gz ]]; then
+    # Determine content-type based on file extension
+    if [[ "$file_path" == *.dmg ]]; then
+        content_type="application/x-apple-diskimage"
+        content_encoding=""
+    elif [[ "$file_path" == *.exe ]]; then
+        content_type="application/x-msdownload"
+        content_encoding=""
+    elif [[ "$file_path" == *.gz ]]; then
         content_type="application/gzip"
-        # Don't set content-encoding here - let the web worker handle it
         content_encoding=""
     else
         content_type="application/octet-stream"
