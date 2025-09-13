@@ -11,6 +11,7 @@ interface R2Bucket {
 }
 
 export interface Env {
+  ASSETS: Fetcher;
   DOWNLOADS: R2Bucket;
 }
 
