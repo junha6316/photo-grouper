@@ -8,14 +8,16 @@ import {
 
 export default {
   async fetch(request: Request, env: Env) {
+    console.log("env", env);
     const url = new URL(request.url);
     if (!url.pathname.startsWith("/api/")) {
       return env.ASSETS.fetch(request);
     }
+
     if (!url.pathname.startsWith("/api/download")) {
-      return new Response(null, {
-        headers: corsHeaders,
-        status: 200,
+      return new Response(JSON.stringify({ error: "API endpoint not found" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 404,
       });
     }
 
@@ -50,7 +52,8 @@ export default {
 
       const getAvailableFileResult = await getAvailableFile(
         env.DOWNLOADS,
-        DOWNLOAD_FILES[platform.toLowerCase() as keyof typeof DOWNLOAD_FILES]
+        DOWNLOAD_FILES[platform.toLowerCase() as keyof typeof DOWNLOAD_FILES],
+        env
       );
 
       if (!getAvailableFileResult) {
