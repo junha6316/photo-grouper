@@ -74,7 +74,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,  # Important for onedir mode
-    name='PhotoGrouper',
+    name='Photo Grouper',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,  # Don't strip on macOS
