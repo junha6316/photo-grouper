@@ -33,8 +33,13 @@ jobs:
               # Build with PyInstaller using spec file
               uv run pyinstaller ./photo-grouper.spec
 
-              # Check if app bundle exists (onedir mode creates it differently)
-              if [ -d "dist/Photo Grouper/Photo Grouper.app" ]; then
+              # Check what was built
+              echo "Checking dist directory contents:"
+              ls -la dist/
+              
+              # In onedir mode with BUNDLE, the app is at dist/Photo Grouper.app
+              if [ -d "dist/Photo Grouper.app" ]; then
+                echo "Found app bundle at dist/Photo Grouper.app"
                 # Create DMG from app bundle
                 create-dmg \
                   --volname "Photo Grouper" \
@@ -46,8 +51,16 @@ jobs:
                   --app-drop-link 600 185 \
                   "photo-grouper-macos.dmg" \
                   "dist/"
+              elif [ -d "dist/PhotoGrouper" ]; then
+                echo "Found onedir build at dist/PhotoGrouper, creating DMG from directory"
+                # Create a simple DMG from the directory
+                hdiutil create -volname "Photo Grouper" \
+                  -srcfolder "dist/PhotoGrouper" \
+                  -ov -format UDZO \
+                  "photo-grouper-macos.dmg"
               else
-                echo "App bundle not found"
+                echo "ERROR: No valid build output found in dist/"
+                ls -la dist/
                 exit 1
               fi
 
