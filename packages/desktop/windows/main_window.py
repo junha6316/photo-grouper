@@ -10,7 +10,7 @@ from typing import List, Dict
 import numpy as np
 
 from core.scanner import ImageScanner
-from core.embedder import ImageEmbedder
+
 from core.grouper import PhotoGrouper
 from ui.views import AllPhotosView, GroupedPhotosView, SelectedPhotosView
 
@@ -44,6 +44,7 @@ class ProcessingThread(QThread):
             
             # Step 2: Initialize embedder and fit PCA
             self.progress_updated.emit(15, "Initializing embedder...")
+            from core.embedder import ImageEmbedder
             embedder = ImageEmbedder()
             
             def progress_callback(current_idx: int, total: int, current_path: str, eta_seconds=None):

@@ -20,7 +20,8 @@ excludes= []
 # Hidden imports for PyTorch and other dependencies
 hiddenimports = [
     'torch',
-    'torchvision',
+    'torchvision.models.mobilenetv3',
+    'torchvision.transforms',
     'PIL',
     'PIL._tkinter_finder',
     'numpy',
@@ -71,15 +72,30 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
+    [],
+    exclude_binaries=True,  # Important for onedir mode
+    name='PhotoGrouper',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,  # Don't strip on macOS
+    upx=False,
+    console=False,
+    disable_windowed_traceback=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon=str(spec_root.parent.parent / 'assets' / 'icon.ico') if sys.platform == 'win32' 
+         else str(spec_root.parent.parent / 'assets' / 'icon.icns') if sys.platform == 'darwin'
+         else None
+)
+
+coll = COLLECT(
+    exe,
     a.binaries,
     a.zipfiles,
     a.datas,
-    [],
-    name='Photo Grouper',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=True,  # Strip symbols for size reduction
-    upx=True,    # Enable UPX compression
+    strip=True,
+    upx=False,
     upx_exclude=[
         # Exclude DLLs that may cause issues with UPX
         'vcruntime140.dll',
@@ -96,24 +112,14 @@ exe = EXE(
         'mkl_*.dll',
         'libiomp*.dll',
     ],
-    runtime_tmpdir=None,
-    console=False,  # Set to True for debugging
-    disable_windowed_traceback=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon=str(spec_root.parent.parent / 'assets' / 'icon.ico') if sys.platform == 'win32' 
-         else str(spec_root.parent.parent / 'assets' / 'icon.icns') if sys.platform == 'darwin'
-         else None,
-    # Additional size optimization options
-    optimize=1,  # Bytecode optimization level
-    noupx=False,  # Enable UPX (set to True to disable if issues occur)
+    name='Photo Grouper'
 )
+
 
 # macOS app bundle
 if sys.platform == 'darwin':
     app = BUNDLE(
-        exe,
+        coll,
         name='Photo Grouper.app',
         icon=str(spec_root.parent.parent / 'assets' / 'icon.icns'),
         bundle_identifier='com.photogrouper.app',

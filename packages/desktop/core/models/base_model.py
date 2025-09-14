@@ -7,12 +7,12 @@ class BaseModel(ABC):
     """Abstract base class for feature extraction models."""
     
     @abstractmethod
-    def get_model(self) -> nn.Module:
+    def get_model(self) -> "nn.Module":
         """Return the PyTorch model."""
         pass
     
     @abstractmethod
-    def get_transforms(self) -> transforms.Compose:
+    def get_transforms(self) -> "transforms.Compose":
         """Return the image preprocessing transforms."""
         pass
     

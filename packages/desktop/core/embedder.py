@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import torch
+from torch import Tensor, cuda, no_grad, stack, nn
 from PIL import Image
 import numpy as np
 from typing import Dict, Optional
@@ -29,7 +29,7 @@ class ImageEmbedder:
             device: PyTorch device ('cuda', 'cpu', or None for auto)
             pca_components: Number of PCA components
         """
-        self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = device or ('cuda' if cuda.is_available() else 'cpu')
         self.pca_components = pca_components
         self.pca = None
         self.pca_fitted = False
@@ -106,12 +106,12 @@ class ImageEmbedder:
             tensor = self.transform(image).unsqueeze(0).to(self.device)
             
             # Extract features
-            with torch.no_grad():
+            with no_grad():
                 features = self.model(tensor)
                 # Features are already flattened by our model
                 features = features.squeeze()
                 # L2 normalize
-                features = torch.nn.functional.normalize(features, p=2, dim=0)
+                features = nn.functional.normalize(features, p=2, dim=0)
                 embedding = features.cpu().numpy()
             
             # Cache the result in both memory and database
@@ -136,7 +136,7 @@ class ImageEmbedder:
         path_to_embedding = {}
         
         # Load and preprocess batch using ThreadPoolExecutor for efficiency
-        def _load_transform_image(path: str) -> tuple[torch.Tensor, str]:
+        def _load_transform_image(path: str) -> "tuple[Tensor, str]":
             try:
                 image = Image.open(path).convert('RGB')
                 tensor = self.transform(image)
@@ -160,12 +160,12 @@ class ImageEmbedder:
         valid_paths = list(path_to_embedding.keys())
         
         # Stack into single batch tensor and extract features
-        batch_tensor = torch.stack(batch_tensors).to(self.device)
+        batch_tensor = stack(batch_tensors).to(self.device)
         
-        with torch.no_grad():
+        with no_grad():
             features = self.model(batch_tensor)
             # Normalize each feature vector
-            features = torch.nn.functional.normalize(features, p=2, dim=1)
+            features = nn.functional.normalize(features, p=2, dim=1)
             embeddings = features.cpu().numpy()
 
         # sort like image paths

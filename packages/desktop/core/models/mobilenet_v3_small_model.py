@@ -1,5 +1,5 @@
 import torch.nn as nn
-from torchvision import models, transforms
+from torchvision import transforms
 from .base_model import BaseModel
 
 
@@ -8,7 +8,8 @@ class MobileNetV3SmallModel(BaseModel):
     
     def get_model(self) -> nn.Module:
         # Load pre-trained MobileNetV3-Small
-        base_model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1)
+        from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights
+        base_model = mobilenet_v3_small(weights=MobileNet_V3_Small_Weights.IMAGENET1K_V1)
         
         # MobileNetV3 structure: features -> avgpool -> classifier
         # We want features + global average pooling, but not the classifier

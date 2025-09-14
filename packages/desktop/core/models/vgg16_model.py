@@ -7,6 +7,7 @@ class VGG16Model(BaseModel):
     """VGG16 model implementation."""
     
     def get_model(self) -> nn.Module:
+        
         base_model = models.vgg16(weights=models.VGG16_Weights.IMAGENET1K_V1)
         return nn.Sequential(
             base_model.features,
