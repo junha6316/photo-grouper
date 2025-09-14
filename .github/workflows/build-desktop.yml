@@ -34,17 +34,29 @@ jobs:
               # Build with PyInstaller using spec file
               uv run pyinstaller ./photo-grouper.spec
 
-              # Create DMG
-              create-dmg \
-                --volname "Photo Grouper" \
-                --window-pos 200 120 \
-                --window-size 800 400 \
-                --icon-size 100 \
-                --icon "Photo Grouper.app" 200 190 \
-                --hide-extension "Photo Grouper.app" \
-                --app-drop-link 600 185 \
-                "photo-grouper-macos.dmg" \
-                "dist/"
+              # Check if app bundle exists (onedir mode creates it differently)
+              if [ -d "dist/Photo Grouper.app" ]; then
+                # Create DMG from app bundle
+                create-dmg \
+                  --volname "Photo Grouper" \
+                  --window-pos 200 120 \
+                  --window-size 800 400 \
+                  --icon-size 100 \
+                  --icon "Photo Grouper.app" 200 190 \
+                  --hide-extension "Photo Grouper.app" \
+                  --app-drop-link 600 185 \
+                  "photo-grouper-macos.dmg" \
+                  "dist/"
+              else
+                # If no app bundle, create a simple DMG from the executable directory
+                echo "Creating DMG from onedir build..."
+                create-dmg \
+                  --volname "Photo Grouper" \
+                  --window-pos 200 120 \
+                  --window-size 800 400 \
+                  "photo-grouper-macos.dmg" \
+                  "dist/Photo Grouper/" || true
+              fi
 
           - os: windows-latest
             target: windows
@@ -53,8 +65,9 @@ jobs:
               # Build with PyInstaller using spec file
               uv run pyinstaller ./photo-grouper.spec
 
-              # Move and rename the executable
-              mv "dist/Photo Grouper.exe" "photo-grouper-windows.exe"
+              # Move executable from onedir build
+              # In onedir mode, the exe is in dist/Photo Grouper/Photo Grouper.exe
+              mv "dist/Photo Grouper/Photo Grouper.exe" "photo-grouper-windows.exe"
 
 
     steps:
