@@ -24,7 +24,6 @@ jobs:
     strategy:
       matrix:
         include:
-          
           - os: macos-latest
             target: macos
             artifact: photo-grouper-macos.dmg
@@ -35,7 +34,7 @@ jobs:
               uv run pyinstaller ./photo-grouper.spec
 
               # Check if app bundle exists (onedir mode creates it differently)
-              if [ -d "dist/Photo Grouper.app" ]; then
+              if [ -d "dist/Photo Grouper/Photo Grouper.app" ]; then
                 # Create DMG from app bundle
                 create-dmg \
                   --volname "Photo Grouper" \
@@ -48,14 +47,8 @@ jobs:
                   "photo-grouper-macos.dmg" \
                   "dist/"
               else
-                # If no app bundle, create a simple DMG from the executable directory
-                echo "Creating DMG from onedir build..."
-                create-dmg \
-                  --volname "Photo Grouper" \
-                  --window-pos 200 120 \
-                  --window-size 800 400 \
-                  "photo-grouper-macos.dmg" \
-                  "dist/Photo Grouper/" || true
+                echo "App bundle not found"
+                exit 1
               fi
 
           - os: windows-latest
@@ -68,7 +61,6 @@ jobs:
               # Move executable from onedir build
               # In onedir mode, the exe is in dist/Photo Grouper/Photo Grouper.exe
               mv "dist/Photo Grouper/Photo Grouper.exe" "photo-grouper-windows.exe"
-
 
     steps:
       - name: Checkout code
@@ -137,7 +129,6 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
 
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -163,12 +154,12 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           chmod +x .github/scripts/upload-to-r2.sh
-          
+
           # Upload macOS build
           if [ -f "artifacts/macos-build/photo-grouper-macos.dmg" ]; then
             .github/scripts/upload-to-r2.sh "artifacts/macos-build/photo-grouper-macos.dmg" "photo-grouper-macos.dmg"
           fi
-          
+
           # Upload Windows build
           if [ -f "artifacts/windows-build/photo-grouper-windows.exe" ]; then
             .github/scripts/upload-to-r2.sh "artifacts/windows-build/photo-grouper-windows.exe" "photo-grouper-windows.exe"
@@ -186,7 +177,7 @@ jobs:
             size=$(stat -f%z "artifacts/windows-build/photo-grouper-windows.exe" 2>/dev/null || stat -c%s "artifacts/windows-build/photo-grouper-windows.exe" 2>/dev/null)
             echo "  - photo-grouper-windows.exe: ${size} bytes"
           fi
-          
+
           echo ""
           echo "🌐 Web API endpoints:"
           echo "  - macOS: /api/download?platform=macos"
