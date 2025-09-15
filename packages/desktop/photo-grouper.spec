@@ -84,8 +84,8 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=str(spec_root.parent.parent / 'assets' / 'icon.ico') if sys.platform == 'win32' 
-         else str(spec_root.parent.parent / 'assets' / 'icon.icns') if sys.platform == 'darwin'
+    icon=str(spec_root / 'assets' / 'icon.ico') if sys.platform == 'win32'
+         else str(spec_root / 'assets' / 'icon.icns') if sys.platform == 'darwin'
          else None
 )
 
@@ -121,7 +121,7 @@ if sys.platform == 'darwin':
     app = BUNDLE(
         coll,
         name='Photo Grouper.app',
-        icon=str(spec_root.parent.parent / 'assets' / 'icon.icns'),
+        icon=str(spec_root / 'assets' / 'icon.icns'),
         bundle_identifier='com.photogrouper.app',
         info_plist={
             'CFBundleDisplayName': 'Photo Grouper',
