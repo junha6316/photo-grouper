@@ -91,3 +91,8 @@ exclude = [
     "venv/",
     ".venv/",
 ]
+
+
+[tool.uv.scripts]
+build = "rm -rf build dist __pycache__ && pyinstaller photo-grouper.spec"
+

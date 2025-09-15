@@ -104,25 +104,24 @@ jobs:
           python --version
           uv python list
 
-      - name: Create placeholder icon files (if not exist)
+      - name: Generate app icon (macOS)
+        if: matrix.target == 'macos'
         shell: bash
         run: |
-          mkdir -p assets
-          # Create placeholder icons if they don't exist
-          if [ ! -f "assets/icon.icns" ] && [ "${{ matrix.target }}" = "macos" ]; then
-            # Create a simple placeholder icon for macOS (create a minimal valid ICNS file)
-            echo "Creating placeholder icon for macOS"
-            # Create a minimal ICNS file header
-            printf '\x69\x63\x6e\x73\x00\x00\x00\x08' > assets/icon.icns
-          fi
-          if [ ! -f "assets/icon.ico" ] && [ "${{ matrix.target }}" = "windows" ]; then
-            # Create a simple placeholder icon for Windows (create a minimal valid ICO file)
-            echo "Creating placeholder icon for Windows"
-            # Create a minimal ICO file header
-            printf '\x00\x00\x01\x00\x01\x00\x10\x10\x00\x00\x00\x00\x00\x00\x28\x01\x00\x00\x16\x00\x00\x00' > assets/icon.ico
-            # Add minimal bitmap data (40 bytes for header + 64 bytes for image data + 32 bytes for mask)
-            dd if=/dev/zero bs=136 count=1 >> assets/icon.ico 2>/dev/null || true
-          fi
+          cd packages/desktop
+          chmod +x scripts/generate-icons.sh
+          ./scripts/generate-icons.sh
+
+      - name: Generate app icon (Windows)
+        if: matrix.target == 'windows'
+        shell: bash
+        run: |
+          cd packages/desktop
+          # Install ImageMagick if needed
+          choco install imagemagick -y --no-progress
+          export PATH="/c/Program Files/ImageMagick-7.0.11-Q16:/c/Program Files/ImageMagick-7.1.1-Q16:$PATH"
+          chmod +x scripts/generate-icons.sh
+          ./scripts/generate-icons.sh
 
       - name: Build application
         shell: bash

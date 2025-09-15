@@ -5,15 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler pages dev",
-    "build": "tsc -b && vite build && pnpm run build:worker",
-    "build:worker": "tsc --project tsconfig.worker.json",
+    "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "pnpm run build && vite preview",
     "deploy": "pnpm run build && wrangler pages deploy",
     "cf-typegen": "wrangler types"
   },
   "dependencies": {
-    "aws4fetch": "^1.0.20",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
