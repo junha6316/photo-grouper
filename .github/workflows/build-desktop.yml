@@ -112,6 +112,20 @@ jobs:
           chmod +x scripts/generate-icons.sh
           ./scripts/generate-icons.sh
 
+      - name: Import Code Signing Certificate (macOS)
+        if: matrix.target == 'macos'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+        run: |
+          echo $MACOS_CERTIFICATE | base64 --decode > certificate.p12
+          security create-keychain -p actions build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p actions build.keychain
+          security import certificate.p12 -k build.keychain -P $MACOS_CERTIFICATE_PWD -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k actions build.keychain
+          rm certificate.p12
+
       - name: Generate app icon (Windows)
         if: matrix.target == 'windows'
         shell: bash
@@ -128,6 +142,51 @@ jobs:
         run: |
           cd packages/desktop
           ${{ matrix.build_command }}
+
+      - name: Sign and Notarize Application (macOS)
+        if: matrix.target == 'macos'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          DEVELOPER_ID_NAME: ${{ secrets.DEVELOPER_ID_NAME }}
+        run: |
+          cd packages/desktop
+
+          # Sign the application bundle
+          if [ -d "dist/Photo Grouper.app" ]; then
+            echo "Signing Photo Grouper.app..."
+            codesign --deep --force --verify --verbose \
+              --sign "$DEVELOPER_ID_NAME" \
+              --options runtime \
+              "dist/Photo Grouper.app"
+
+            # Verify signature
+            codesign --verify --verbose "dist/Photo Grouper.app"
+
+            # Create a zip for notarization
+            echo "Creating zip for notarization..."
+            ditto -c -k --keepParent "dist/Photo Grouper.app" "Photo Grouper.zip"
+
+            # Submit for notarization
+            echo "Submitting for notarization..."
+            xcrun notarytool submit "Photo Grouper.zip" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_ID_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait
+
+            # Staple the notarization ticket
+            echo "Stapling notarization ticket..."
+            xcrun stapler staple "dist/Photo Grouper.app"
+
+            # Clean up
+            rm "Photo Grouper.zip"
+
+            echo "✅ Application signed and notarized successfully"
+          else
+            echo "⚠️ App bundle not found, skipping signing"
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
