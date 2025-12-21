@@ -36,28 +36,10 @@ jobs:
               # Check what was built
               echo "Checking dist directory contents:"
               ls -la dist/
-              
-              # In onedir mode with BUNDLE, the app is at dist/Photo Grouper.app
+
+              # Verify the app bundle was created (but don't create DMG yet - that happens after signing)
               if [ -d "dist/Photo Grouper.app" ]; then
-                echo "Found app bundle at dist/Photo Grouper.app"
-                # Create DMG from app bundle
-                create-dmg \
-                  --volname "Photo Grouper" \
-                  --window-pos 200 120 \
-                  --window-size 800 400 \
-                  --icon-size 100 \
-                  --icon "Photo Grouper.app" 200 190 \
-                  --hide-extension "Photo Grouper.app" \
-                  --app-drop-link 600 185 \
-                  "photo-grouper-macos.dmg" \
-                  "dist/"
-              elif [ -d "dist/PhotoGrouper" ]; then
-                echo "Found onedir build at dist/PhotoGrouper, creating DMG from directory"
-                # Create a simple DMG from the directory
-                hdiutil create -volname "Photo Grouper" \
-                  -srcfolder "dist/PhotoGrouper" \
-                  -ov -format UDZO \
-                  "photo-grouper-macos.dmg"
+                echo "✅ Found app bundle at dist/Photo Grouper.app"
               else
                 echo "ERROR: No valid build output found in dist/"
                 ls -la dist/
@@ -158,6 +140,27 @@ jobs:
 
           # Run in non-interactive mode by piping 'y' to the confirmation prompt
           echo "y" | ./scripts/sign-and-notarize.sh
+
+      - name: Create DMG from signed app (macOS)
+        if: matrix.target == 'macos'
+        run: |
+          cd packages/desktop
+
+          # Now create DMG from the signed and notarized app bundle
+          echo "📦 Creating DMG from signed app bundle..."
+          create-dmg \
+            --volname "Photo Grouper" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --icon "Photo Grouper.app" 200 190 \
+            --hide-extension "Photo Grouper.app" \
+            --app-drop-link 600 185 \
+            "photo-grouper-macos.dmg" \
+            "dist/"
+
+          echo "✅ DMG created successfully"
+          ls -lh photo-grouper-macos.dmg
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
