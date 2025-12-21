@@ -153,40 +153,11 @@ jobs:
         run: |
           cd packages/desktop
 
-          # Sign the application bundle
-          if [ -d "dist/Photo Grouper.app" ]; then
-            echo "Signing Photo Grouper.app..."
-            codesign --deep --force --verify --verbose \
-              --sign "$DEVELOPER_ID_NAME" \
-              --options runtime \
-              "dist/Photo Grouper.app"
+          # Use the centralized sign-and-notarize script
+          chmod +x scripts/sign-and-notarize.sh
 
-            # Verify signature
-            codesign --verify --verbose "dist/Photo Grouper.app"
-
-            # Create a zip for notarization
-            echo "Creating zip for notarization..."
-            ditto -c -k --keepParent "dist/Photo Grouper.app" "Photo Grouper.zip"
-
-            # Submit for notarization
-            echo "Submitting for notarization..."
-            xcrun notarytool submit "Photo Grouper.zip" \
-              --apple-id "$APPLE_ID" \
-              --password "$APPLE_ID_PASSWORD" \
-              --team-id "$APPLE_TEAM_ID" \
-              --wait
-
-            # Staple the notarization ticket
-            echo "Stapling notarization ticket..."
-            xcrun stapler staple "dist/Photo Grouper.app"
-
-            # Clean up
-            rm "Photo Grouper.zip"
-
-            echo "✅ Application signed and notarized successfully"
-          else
-            echo "⚠️ App bundle not found, skipping signing"
-          fi
+          # Run in non-interactive mode by piping 'y' to the confirmation prompt
+          echo "y" | ./scripts/sign-and-notarize.sh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

@@ -29,6 +29,77 @@ rm -rf ~/.photo_grouper/embeddings.db
 python -m memory_profiler app.py
 ```
 
+## Building and Distribution (macOS)
+
+### Building the App
+
+```bash
+cd packages/desktop
+
+# Install dependencies
+uv sync
+
+# Build the app bundle
+uv run pyinstaller ./photo-grouper.spec
+
+# Output: dist/Photo Grouper.app
+```
+
+### Code Signing and Notarization
+
+For local builds to pass macOS Gatekeeper:
+
+#### Option 1: Development Testing (Quick)
+
+```bash
+# Remove quarantine attribute to bypass Gatekeeper
+xattr -cr "dist/Photo Grouper.app"
+```
+
+#### Option 2: Production Distribution (Recommended)
+
+```bash
+# Set up environment variables
+export DEVELOPER_ID_NAME="Developer ID Application: Your Name (TEAM_ID)"
+export APPLE_ID="your-apple-id@example.com"
+export APPLE_ID_PASSWORD="app-specific-password"  # Get from appleid.apple.com
+export APPLE_TEAM_ID="YOUR_TEAM_ID"
+
+# Run sign and notarize script
+./scripts/sign-and-notarize.sh
+```
+
+**Getting credentials:**
+1. `DEVELOPER_ID_NAME`: Run `security find-identity -v -p codesigning`
+2. `APPLE_ID_PASSWORD`: Create app-specific password at https://appleid.apple.com
+3. `APPLE_TEAM_ID`: Find in Apple Developer portal
+
+### Creating DMG
+
+```bash
+# Install create-dmg
+brew install create-dmg
+
+# Create DMG from signed app
+create-dmg \
+  --volname "Photo Grouper" \
+  --window-pos 200 120 \
+  --window-size 800 400 \
+  --icon-size 100 \
+  --icon "Photo Grouper.app" 200 190 \
+  --hide-extension "Photo Grouper.app" \
+  --app-drop-link 600 185 \
+  "photo-grouper-macos.dmg" \
+  "dist/"
+```
+
+### CI/CD
+
+GitHub Actions automatically builds, signs, and notarizes on push to `main` or `develop`:
+- Workflow: `.github/workflows/build-desktop.yml`
+- Artifacts uploaded to Cloudflare R2
+- Download endpoints: `/api/download?platform=macos`
+
 ## Architecture
 
 ### Core Processing (`core/`)
