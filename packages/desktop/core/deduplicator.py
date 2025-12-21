@@ -1,9 +1,8 @@
 import numpy as np
 import os
 from utils.math_utils import cosine_similarity
-from typing import Dict, List, Tuple, Set
+from typing import Dict, List, Tuple
 from collections import defaultdict
-import hashlib
 from PIL import Image
 
 class ImageDeduplicator:
@@ -70,6 +69,8 @@ class ImageDeduplicator:
         valid_paths = [path for path in image_paths if path in embeddings]
         if len(valid_paths) < 2:
             return []
+
+        index_by_path = {path: idx for idx, path in enumerate(valid_paths)}
         
         # Create embedding matrix
         embedding_matrix = np.array([embeddings[path] for path in valid_paths])
@@ -89,7 +90,7 @@ class ImageDeduplicator:
                 continue
                 
             # Extract similarity submatrix for this duplicate group
-            indices = [valid_paths.index(path) for path in dup_group]
+            indices = [index_by_path[path] for path in dup_group]
             sub_similarity = similarity_matrix[np.ix_(indices, indices)]
             
             # Find recommended keeper
@@ -149,8 +150,8 @@ class ImageDeduplicator:
         1. Highest resolution (width * height)
         2. Largest file size
         3. Most recent modification time
-        4. Shortest filename (original vs copy indicators)
-        5. Alphabetically first filename
+        4. Filename heuristics (penalize copy indicators, prefer shorter names)
+        5. Alphabetically first filename (tie-breaker)
         """
         if len(duplicate_paths) == 1:
             return duplicate_paths[0], "Only image in group"
@@ -160,6 +161,7 @@ class ImageDeduplicator:
         for path in duplicate_paths:
             score = 0
             reason_parts = []
+            filename = os.path.basename(path).lower()
             
             try:
                 # File stats
@@ -171,8 +173,6 @@ class ImageDeduplicator:
                 with Image.open(path) as img:
                     width, height = img.size
                     resolution = width * height
-                
-                filename = os.path.basename(path).lower()
                 
                 # Score based on resolution (higher is better)
                 score += resolution / 1000000  # Normalize to millions of pixels
@@ -191,23 +191,39 @@ class ImageDeduplicator:
                 copy_indicators = ['copy', 'duplicate', 'dup', '_1', '_2', '(1)', '(2)', 'thumb']
                 if any(indicator in filename for indicator in copy_indicators):
                     score -= 10
-                    reason_parts.append("likely original (no copy indicators)")
                 else:
                     reason_parts.append("no copy indicators in filename")
                 
                 # Penalty for longer filenames (usually copies have longer names)
                 score -= len(filename) / 100
                 
-                scores.append((score, path, reason_parts))
+                scores.append({
+                    'score': score,
+                    'path': path,
+                    'reasons': reason_parts,
+                    'filename': filename,
+                })
                 
             except Exception as e:
                 # If we can't analyze the image, give it a low score
-                scores.append((-1000, path, [f"analysis failed: {str(e)}"]))
+                scores.append({
+                    'score': -1000,
+                    'path': path,
+                    'reasons': [f"analysis failed: {str(e)}"],
+                    'filename': filename,
+                })
         
-        # Sort by score (highest first)
-        scores.sort(reverse=True)
-        best_path = scores[0][1]
-        reason_parts = scores[0][2]
+        # Sort by score (highest first) with explicit tie-breakers
+        scores.sort(
+            key=lambda item: (
+                -item['score'],
+                len(item['filename']),
+                item['filename'],
+                item['path'],
+            )
+        )
+        best_path = scores[0]['path']
+        reason_parts = scores[0]['reasons']
         
         # Create reason string
         if reason_parts:
@@ -255,7 +271,7 @@ class ImageDeduplicator:
     def apply_deduplication(self, duplicate_sets: List[Dict], 
                            user_choices: Dict[str, str] = None) -> Dict:
         """
-        Apply deduplication by moving/deleting chosen images.
+        Build a deduplication plan without modifying files.
         
         Args:
             duplicate_sets: List of duplicate sets from find_duplicates()
@@ -263,7 +279,7 @@ class ImageDeduplicator:
                          If None, uses recommended keepers
         
         Returns:
-            Dict with results of the deduplication process
+            Dict with planned results (no file operations performed)
         """
         results = {
             'kept_images': [],
