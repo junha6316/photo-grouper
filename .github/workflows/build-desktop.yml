@@ -71,9 +71,6 @@ jobs:
           enable-cache: true
 
       - name: Setup Python and dependencies
-        env:
-          # Force CPU-only PyTorch to reduce size
-          PIP_EXTRA_INDEX_URL: "https://download.pytorch.org/whl/cpu"
         run: |
           cd packages/desktop
           mise use python@3.12

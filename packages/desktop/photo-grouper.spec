@@ -14,14 +14,14 @@ datas = [
     (str(spec_root / 'core'), 'core'),
     (str(spec_root / 'infra'), 'infra'),
     (str(spec_root / 'utils'), 'utils'),
+    (str(spec_root / 'models'), 'models'),
 ]
 excludes= []
 
-# Hidden imports for PyTorch and other dependencies
+# Hidden imports for ONNX Runtime and other dependencies
 hiddenimports = [
-    'torch',
-    'torchvision.models.mobilenetv3',
-    'torchvision.transforms',
+    'onnxruntime',
+    'onnxruntime.capi._pybind_state',
     'PIL',
     'PIL._tkinter_finder',
     'numpy',
@@ -30,15 +30,12 @@ hiddenimports = [
     'numpy._core.overrides',
     'numpy.core',
     'numpy.core.multiarray',
-    'sklearn',
-    'faiss',
     'networkx',
     'PySide6.QtCore',
     'PySide6.QtGui', 
     'PySide6.QtWidgets',
     'aiofiles',
     'watchdog',
-    'seaborn',
 ]
 
 # Exclude unnecessary modules to reduce size
@@ -51,12 +48,7 @@ a = Analysis(
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
-    hooksconfig={
-        # Optimize torch imports
-        'torch': {
-            'backends': ['cpu'],  # Only CPU backend
-        },
-    },
+    hooksconfig={},
     runtime_hooks=[],
     excludes=excludes,
     win_no_prefer_redirects=False,
@@ -106,11 +98,9 @@ coll = COLLECT(
         'Qt6Gui.dll',
         'Qt6Widgets.dll',
         'python*.dll',
-        # PyTorch related libraries
-        'torch_cpu.dll',
-        'libtorch_cpu.dll',
-        'mkl_*.dll',
-        'libiomp*.dll',
+        # ONNX Runtime related libraries
+        'onnxruntime*.dll',
+        'onnxruntime_providers_*.dll',
     ],
     name='Photo Grouper'
 )

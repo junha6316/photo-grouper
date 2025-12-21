@@ -1,12 +1,20 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from torch import Tensor, cuda, no_grad, stack, nn
-from PIL import Image
-import numpy as np
-from typing import Dict, Optional
 import hashlib
-from utils.math_utils import PCA
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import Dict, Optional
+
+import numpy as np
+import onnxruntime as ort
+from PIL import Image
+
+from core.models import (
+    ONNXBaseModel,
+    ONNXMobileNetV3SmallModel,
+    ONNXResNet18Model,
+    ONNXVGGModel,
+)
 from infra.cache_db import EmbeddingCache
-from core.models import BaseModel, VGG16Model, ResNet18Model, MobileNetV3SmallModel
+from utils.math_utils import PCA
 
 # Initialize HEIF support if available
 try:
@@ -26,10 +34,11 @@ class ImageEmbedder:
         
         Args:
             model_type: Type of model to use ("vgg16", "resnet18", "mobilenetv3_small")
-            device: PyTorch device ('cuda', 'cpu', or None for auto)
+            device: ONNX Runtime provider ("CUDAExecutionProvider", "CPUExecutionProvider",
+                "CoreMLExecutionProvider", or None for auto; "cuda"/"cpu" also accepted)
             pca_components: Number of PCA components
         """
-        self.device = device or ('cuda' if cuda.is_available() else 'cpu')
+        self.device = self._normalize_provider(device) or self._get_best_provider()
         self.pca_components = pca_components
         self.pca = None
         self.pca_fitted = False
@@ -50,29 +59,71 @@ class ImageEmbedder:
         
         # Try to load PCA model from cache on initialization
         self._load_cached_pca_model()
+
+    def _normalize_provider(self, device: Optional[str]) -> Optional[str]:
+        if device is None:
+            return None
+
+        device_lower = device.lower()
+        if device_lower in ("cuda", "cudaexecutionprovider", "cuda:0", "gpu"):
+            return "CUDAExecutionProvider"
+        if device_lower in ("coreml", "coremlexecutionprovider"):
+            return "CoreMLExecutionProvider"
+        if device_lower in ("cpu", "cpuexecutionprovider"):
+            return "CPUExecutionProvider"
+        return device
+
+    def _get_best_provider(self) -> str:
+        """Select the best available ONNX Runtime execution provider."""
+        available = ort.get_available_providers()
+        if "CUDAExecutionProvider" in available:
+            return "CUDAExecutionProvider"
+        if "CoreMLExecutionProvider" in available:
+            return "CoreMLExecutionProvider"
+        return "CPUExecutionProvider"
     
-    def _get_model_impl(self, model_type: str) -> BaseModel:
+    def _get_model_impl(self, model_type: str) -> ONNXBaseModel:
         """Get model implementation based on type."""
         if model_type == "vgg16":
-            return VGG16Model()
+            return ONNXVGGModel()
         elif model_type == "resnet18":
-            return ResNet18Model()
+            return ONNXResNet18Model()
         elif model_type == "mobilenetv3_small":
-            print("Using MobileNetV3-Small model")
-            return MobileNetV3SmallModel()
+            print("Using MobileNetV3-Small ONNX model")
+            return ONNXMobileNetV3SmallModel()
         else:
             raise ValueError(f"Unsupported model type: {model_type}")
     
     def _load_model(self):
         """Load the specified model."""
-        self.model = self.model_impl.get_model()
-        self.model.eval()
-        self.model.to(self.device)
-        print(f"Loaded {self.model_name} model with efficient global average pooling ({self.feature_dim} features)")
+        onnx_path = Path(self.model_impl.get_onnx_path())
+        if not onnx_path.is_file():
+            raise FileNotFoundError(
+                f"ONNX model not found: {onnx_path}. Run scripts/export_to_onnx.py to generate it."
+            )
+
+        sess_options = ort.SessionOptions()
+        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+        available = ort.get_available_providers()
+        if self.device not in available:
+            print(f"Requested provider {self.device} unavailable, falling back to CPUExecutionProvider")
+            self.device = "CPUExecutionProvider"
+
+        self.session = ort.InferenceSession(
+            str(onnx_path),
+            sess_options,
+            providers=[self.device],
+        )
+        self.input_name = self.session.get_inputs()[0].name
+        self.output_name = self.session.get_outputs()[0].name
+
+        print(f"Loaded {self.model_name} ONNX model with {self.device}")
+        print(f"  Feature dim: {self.feature_dim}")
     
     def _setup_transforms(self):
         """Setup image preprocessing transforms."""
-        self.transform = self.model_impl.get_transforms()
+        self.preprocess_fn = self.model_impl.get_preprocessing_fn()
     
     def _load_cached_pca_model(self):
         """Try to load PCA model from cache on initialization."""
@@ -103,16 +154,14 @@ class ImageEmbedder:
         try:
             # Load and preprocess image
             image = Image.open(image_path).convert('RGB')
-            tensor = self.transform(image).unsqueeze(0).to(self.device)
+            array = self.preprocess_fn(image)
+            batch_input = np.expand_dims(array, axis=0).astype(np.float32, copy=False)
             
             # Extract features
-            with no_grad():
-                features = self.model(tensor)
-                # Features are already flattened by our model
-                features = features.squeeze()
-                # L2 normalize
-                features = nn.functional.normalize(features, p=2, dim=0)
-                embedding = features.cpu().numpy()
+            outputs = self.session.run([self.output_name], {self.input_name: batch_input})
+            features = np.asarray(outputs[0][0], dtype=np.float32).reshape(-1)
+            # L2 normalize
+            embedding = features / (np.linalg.norm(features) + 1e-8)
             
             # Cache the result in both memory and database
             self._raw_embeddings_cache[image_hash] = embedding
@@ -133,43 +182,45 @@ class ImageEmbedder:
         Returns:
             tuple: (embeddings_list, valid_paths_list) - only valid images are included
         """
-        path_to_embedding = {}
+        path_to_array = {}
         
         # Load and preprocess batch using ThreadPoolExecutor for efficiency
-        def _load_transform_image(path: str) -> "tuple[Tensor, str]":
+        def _load_preprocess_image(path: str) -> "tuple[np.ndarray, str]":
             try:
                 image = Image.open(path).convert('RGB')
-                tensor = self.transform(image)
-                return tensor, path
+                array = self.preprocess_fn(image)
+                return array, path
             except Exception as e:
                 print(f"Error loading {path}: {e}")
                 return None, path
         
         with ThreadPoolExecutor(max_workers=16) as executor:
-            futures = [executor.submit(_load_transform_image, path) for path in image_paths]
+            futures = [executor.submit(_load_preprocess_image, path) for path in image_paths]
             for future in as_completed(futures):
-                tensor, path = future.result()
-                if tensor is not None:
-                    path_to_embedding[path] = tensor
+                array, path = future.result()
+                if array is not None:
+                    path_to_array[path] = array
                    
         
-        if not list(path_to_embedding.values()):
+        if not list(path_to_array.values()):
             return [], []
         
-        batch_tensors = list(path_to_embedding.values())
-        valid_paths = list(path_to_embedding.keys())
-        
-        # Stack into single batch tensor and extract features
-        batch_tensor = stack(batch_tensors).to(self.device)
-        
-        with no_grad():
-            features = self.model(batch_tensor)
-            # Normalize each feature vector
-            features = nn.functional.normalize(features, p=2, dim=1)
-            embeddings = features.cpu().numpy()
+        valid_paths = list(path_to_array.keys())
+        batch_arrays = [path_to_array[path] for path in valid_paths]
 
-        # sort like image paths
-        return [embeddings[valid_paths.index(path)] for path in image_paths], valid_paths
+        # Stack into single batch array and extract features
+        batch_input = np.stack(batch_arrays).astype(np.float32, copy=False)
+
+        outputs = self.session.run([self.output_name], {self.input_name: batch_input})
+        features = np.asarray(outputs[0], dtype=np.float32)
+        if features.ndim > 2:
+            features = features.reshape(features.shape[0], -1)
+        # Normalize each feature vector
+        norms = np.linalg.norm(features, axis=1, keepdims=True)
+        features = features / (norms + 1e-8)
+
+        embeddings = [features[i] for i in range(features.shape[0])]
+        return embeddings, valid_paths
 
     def _get_raw_embeddings_batch(self, image_paths: list, batch_size: int = 32) -> list:
         """Process multiple images in batches for better GPU utilization."""
@@ -180,16 +231,16 @@ class ImageEmbedder:
             batch_paths = image_paths[i:i + batch_size]
             batch_embeddings, valid_paths = self._extract_raw_embeddings_batch(batch_paths)
             
-            # Convert numpy array to list for consistent interface
-            if len(batch_embeddings) > 0:
-                batch_embeddings_list = batch_embeddings
-            else:
-                batch_embeddings_list = []
-            
-            # Handle failed images by adding zero vectors
-            while len(batch_embeddings_list) < len(batch_paths):
-                batch_embeddings_list.append(np.zeros(self.feature_dim, dtype=np.float32).tolist())
-            
+            embedding_by_path = {
+                path: embedding for path, embedding in zip(valid_paths, batch_embeddings)
+            }
+            batch_embeddings_list = []
+            for path in batch_paths:
+                embedding = embedding_by_path.get(path)
+                if embedding is None:
+                    embedding = np.zeros(self.feature_dim, dtype=np.float32)
+                batch_embeddings_list.append(embedding)
+
             all_embeddings.extend(batch_embeddings_list)
         
         return all_embeddings
