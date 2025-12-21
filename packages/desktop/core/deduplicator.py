@@ -1,6 +1,6 @@
 import numpy as np
 import os
-from sklearn.metrics.pairwise import cosine_similarity
+from utils.math_utils import cosine_similarity
 from typing import Dict, List, Tuple, Set
 from collections import defaultdict
 import hashlib

@@ -79,6 +79,13 @@ data/
 *.sqlite3
 ~/.photo_grouper/
 
+# Code signing certificates (NEVER commit these!)
+*.p12
+*.pem
+*.key
+*.cer
+*.mobileprovision
+
 # Logs
 *.log
 

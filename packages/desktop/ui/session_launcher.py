@@ -364,7 +364,7 @@ class SessionLauncher(QDialog):
             return 1.0
         
         try:
-            from sklearn.metrics.pairwise import cosine_similarity
+            from utils.math_utils import pairwise_cosine_similarity
             import numpy as np
             
             # Get embeddings for this group
@@ -378,7 +378,7 @@ class SessionLauncher(QDialog):
             
             # Calculate pairwise similarities
             embedding_matrix = np.array(group_embeddings)
-            similarities = cosine_similarity(embedding_matrix)
+            similarities = pairwise_cosine_similarity(embedding_matrix)
             
             # Get upper triangle (excluding diagonal)
             upper_triangle = similarities[np.triu_indices_from(similarities, k=1)]

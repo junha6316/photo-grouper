@@ -4,7 +4,7 @@ from PIL import Image
 import numpy as np
 from typing import Dict, Optional
 import hashlib
-from sklearn.decomposition import PCA
+from utils.math_utils import PCA
 from infra.cache_db import EmbeddingCache
 from core.models import BaseModel, VGG16Model, ResNet18Model, MobileNetV3SmallModel
 

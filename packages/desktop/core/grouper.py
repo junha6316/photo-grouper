@@ -1,7 +1,7 @@
 import random
 import numpy as np
 import os
-from sklearn.metrics.pairwise import cosine_similarity
+from utils.math_utils import pairwise_cosine_similarity
 from typing import Dict, List, Tuple
 from collections import defaultdict
 import networkx as nx
@@ -63,7 +63,7 @@ class PhotoGrouper:
         embedding_matrix = np.array([embeddings[path] for path in image_paths])
         
         # Compute full similarity matrix
-        sim_matrix = cosine_similarity(embedding_matrix)
+        sim_matrix = pairwise_cosine_similarity(embedding_matrix)
         print(f"Similarity matrix shape: {sim_matrix.shape}")
         
         # Create NetworkX graph and add all nodes first
@@ -154,7 +154,7 @@ class PhotoGrouper:
         
         # Compute similarity matrix between main_image embeddings
         main_embedding_matrix = np.array(cluster_embeddings)
-        cluster_similarity = cosine_similarity(main_embedding_matrix)
+        cluster_similarity = pairwise_cosine_similarity(main_embedding_matrix)
         # save cluster_similarity to file
         # np.save("cluster_similarity.npy", cluster_similarity)
         
@@ -200,7 +200,7 @@ class PhotoGrouper:
                 
                 if len(sample_embeddings) >= 2:
                     sample_matrix = np.array(sample_embeddings)
-                    sample_similarity = cosine_similarity(sample_matrix)
+                    sample_similarity = pairwise_cosine_similarity(sample_matrix)
                     avg_similarity = np.mean(sample_similarity[np.triu_indices_from(sample_similarity, k=1)])
                     
                     # If average similarity is low, it's likely the singles group
@@ -263,7 +263,7 @@ class PhotoGrouper:
         
         # Calculate similarity matrix for the group
         embedding_matrix = np.array(group_embeddings)
-        similarity_matrix = cosine_similarity(embedding_matrix)
+        similarity_matrix = pairwise_cosine_similarity(embedding_matrix)
         
         # Find the image with highest average similarity to all others
         # (excluding self-similarity which is always 1.0)
