@@ -16,7 +16,6 @@ datas = [
     (str(spec_root / 'utils'), 'utils'),
     (str(spec_root / 'models'), 'models'),
 ]
-excludes= []
 
 # Hidden imports for ONNX Runtime and other dependencies
 hiddenimports = [
@@ -32,13 +31,32 @@ hiddenimports = [
     'numpy.core.multiarray',
     'networkx',
     'PySide6.QtCore',
-    'PySide6.QtGui', 
+    'PySide6.QtGui',
     'PySide6.QtWidgets',
     'aiofiles',
     'watchdog',
 ]
 
 # Exclude unnecessary modules to reduce size
+excludes = [
+    'torch',
+    'torchvision',
+    'torchaudio',
+    'torch.nn',
+    'torch.optim',
+    'torch.utils',
+    'IPython',
+    'jedi',
+    'black',
+    'isort',
+    'mypy',
+    'ruff',
+    'tkinter',
+    'tcl',
+    'tk',
+    'tornado',
+    'zmq',
+]
 
 
 a = Analysis(
