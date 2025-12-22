@@ -18,6 +18,7 @@ class AllPhotosView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.all_images: List[str] = []
+        self.hidden_count = 0
         self.grid_view: Optional[GridImageView] = None
         self.main_window = parent
         
@@ -34,9 +35,10 @@ class AllPhotosView(QWidget):
         self.default_label.setStyleSheet("color: #888; font-size: 16px; padding: 50px;")
         layout.addWidget(self.default_label)
     
-    def set_images(self, image_paths: List[str]):
+    def set_images(self, image_paths: List[str], hidden_count: int = 0):
         """Set the images to display."""
         self.all_images = image_paths
+        self.hidden_count = hidden_count
         self.update_display()
     
     def update_display(self):
@@ -50,7 +52,11 @@ class AllPhotosView(QWidget):
         
         if not self.all_images:
             # Show default message
-            self.default_label = QLabel("No images loaded. Select a folder to start.")
+            if self.hidden_count:
+                empty_text = f"No in-focus images ({self.hidden_count} hidden out-of-focus)."
+            else:
+                empty_text = "No images loaded. Select a folder to start."
+            self.default_label = QLabel(empty_text)
             self.default_label.setAlignment(Qt.AlignCenter)
             self.default_label.setStyleSheet("color: #888; font-size: 16px; padding: 50px;")
             layout.addWidget(self.default_label)
@@ -64,7 +70,10 @@ class AllPhotosView(QWidget):
         header_font.setBold(True)
         header_font.setPointSize(12)
         
-        self.header_label = QLabel(f"All Photos ({len(self.all_images)} images)")
+        hidden_text = ""
+        if self.hidden_count:
+            hidden_text = f", {self.hidden_count} hidden out-of-focus"
+        self.header_label = QLabel(f"All Photos ({len(self.all_images)} images{hidden_text})")
         self.header_label.setFont(header_font)
         self.header_label.setStyleSheet("color: #333; padding: 5px;")
         header_layout.addWidget(self.header_label)
@@ -120,4 +129,5 @@ class AllPhotosView(QWidget):
     def clear(self):
         """Clear all images."""
         self.all_images = []
+        self.hidden_count = 0
         self.update_display()

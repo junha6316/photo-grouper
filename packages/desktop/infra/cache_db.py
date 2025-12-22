@@ -61,6 +61,25 @@ class EmbeddingCache:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # Create focus score cache table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS focus_scores (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    file_path TEXT NOT NULL,
+                    file_hash TEXT NOT NULL,
+                    file_size INTEGER NOT NULL,
+                    file_mtime REAL NOT NULL,
+                    focus_score REAL NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(file_path, file_hash)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_focus_file_path_hash
+                ON focus_scores(file_path, file_hash)
+            """)
             
             # Create deduplication sessions table
             cursor.execute("""
@@ -249,6 +268,150 @@ class EmbeddingCache:
                     DELETE FROM embeddings 
                     WHERE file_path = ? AND model_name = ?
                 """, (file_path, model_name))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception:
+            return False
+
+    def get_focus_score(self, file_path: str) -> Optional[float]:
+        """Retrieve focus score from cache."""
+        try:
+            file_hash, file_size, file_mtime = self._get_file_info(file_path)
+        except ValueError:
+            return None
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT focus_score, file_size, file_mtime, file_hash
+                FROM focus_scores
+                WHERE file_path = ? AND file_hash = ?
+            """, (file_path, file_hash))
+
+            result = cursor.fetchone()
+            if result is None:
+                return None
+
+            cached_size, cached_mtime = result['file_size'], result['file_mtime']
+            if cached_size != file_size or abs(cached_mtime - file_mtime) > 1.0:
+                self.remove_focus_score(file_path, file_hash)
+                return None
+
+            return float(result['focus_score'])
+
+    def get_focus_scores(self, file_paths: List[str]) -> Dict[str, float]:
+        """Retrieve focus scores for multiple files."""
+        if not file_paths:
+            return {}
+
+        file_info = {}
+        for path in file_paths:
+            try:
+                file_info[path] = self._get_file_info(path)
+            except ValueError:
+                continue
+
+        if not file_info:
+            return {}
+
+        cached_scores: Dict[str, float] = {}
+        paths = list(file_info.keys())
+        chunk_size = 900
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            for start in range(0, len(paths), chunk_size):
+                chunk = paths[start:start + chunk_size]
+                placeholders = ",".join("?" * len(chunk))
+                cursor.execute(f"""
+                    SELECT file_path, file_hash, file_size, file_mtime, focus_score
+                    FROM focus_scores
+                    WHERE file_path IN ({placeholders})
+                """, chunk)
+
+                rows = cursor.fetchall()
+                for row in rows:
+                    path = row['file_path']
+                    info = file_info.get(path)
+                    if not info:
+                        continue
+                    file_hash, file_size, file_mtime = info
+                    cached_hash = row['file_hash']
+                    cached_size = row['file_size']
+                    cached_mtime = row['file_mtime']
+                    if cached_hash != file_hash or cached_size != file_size or abs(cached_mtime - file_mtime) > 1.0:
+                        cursor.execute("""
+                            DELETE FROM focus_scores
+                            WHERE file_path = ? AND file_hash = ?
+                        """, (path, cached_hash))
+                        continue
+                    cached_scores[path] = float(row['focus_score'])
+
+            conn.commit()
+
+        return cached_scores
+
+    def save_focus_score(self, file_path: str, focus_score: float) -> bool:
+        """Save focus score to cache."""
+        try:
+            file_hash, file_size, file_mtime = self._get_file_info(file_path)
+        except ValueError:
+            return False
+
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO focus_scores
+                    (file_path, file_hash, file_size, file_mtime, focus_score)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (file_path, file_hash, file_size, file_mtime, float(focus_score)))
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"Error saving focus score for {file_path}: {e}")
+            return False
+
+    def save_focus_scores(self, scores: Dict[str, float]) -> int:
+        """Save multiple focus scores to cache."""
+        if not scores:
+            return 0
+
+        saved = 0
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            for path, score in scores.items():
+                try:
+                    file_hash, file_size, file_mtime = self._get_file_info(path)
+                except ValueError:
+                    continue
+
+                cursor.execute("""
+                    INSERT OR REPLACE INTO focus_scores
+                    (file_path, file_hash, file_size, file_mtime, focus_score)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (path, file_hash, file_size, file_mtime, float(score)))
+                saved += 1
+
+            conn.commit()
+
+        return saved
+
+    def remove_focus_score(self, file_path: str, file_hash: Optional[str] = None) -> bool:
+        """Remove focus score from cache."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                if file_hash:
+                    cursor.execute("""
+                        DELETE FROM focus_scores
+                        WHERE file_path = ? AND file_hash = ?
+                    """, (file_path, file_hash))
+                else:
+                    cursor.execute("""
+                        DELETE FROM focus_scores
+                        WHERE file_path = ?
+                    """, (file_path,))
                 conn.commit()
                 return cursor.rowcount > 0
         except Exception:

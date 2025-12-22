@@ -1,9 +1,10 @@
 from PySide6.QtWidgets import (
     QMainWindow, QVBoxLayout, QHBoxLayout, QWidget,
     QPushButton, QFileDialog, QSlider, QLabel, QProgressBar,
-    QMessageBox, QSplitter, QStackedWidget, QFrame, QComboBox, QToolButton, QMenu
+    QMessageBox, QSplitter, QStackedWidget, QFrame, QComboBox, QToolButton, QMenu,
+    QDialog, QDialogButtonBox, QCheckBox, QSizePolicy
 )
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtGui import QAction
 import os
 from typing import List, Dict
@@ -14,17 +15,114 @@ from core.scanner import ImageScanner
 from core.grouper import PhotoGrouper
 from ui.views import AllPhotosView, GroupedPhotosView, GroupDetailView, SelectedTray
 
+DEFAULT_FOCUS_THRESHOLD = 100
+
+
+class ElidedLabel(QLabel):
+    """Single-line label that elides long text to avoid layout overflow."""
+
+    def __init__(self, text: str = "", parent=None, elide_mode: Qt.TextElideMode = Qt.ElideMiddle):
+        super().__init__(parent)
+        self._full_text = ""
+        self._elide_mode = elide_mode
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setMinimumWidth(0)
+        if text:
+            self.set_full_text(text)
+
+    def set_full_text(self, text: str):
+        self._full_text = text or ""
+        self.setToolTip(self._full_text)
+        self._update_elided_text()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_elided_text()
+
+    def _update_elided_text(self):
+        if not self._full_text:
+            self.setText("")
+            return
+        metrics = self.fontMetrics()
+        available = max(0, self.width() - 4)
+        self.setText(metrics.elidedText(self._full_text, self._elide_mode, available))
+
+
+class StartupDialog(QDialog):
+    """Startup dialog for initial folder selection and focus filtering."""
+
+    def __init__(self, parent=None, hide_out_of_focus: bool = True):
+        super().__init__(parent)
+        self.selected_folder = ""
+        self.hide_out_of_focus = hide_out_of_focus
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowTitle("Start Photo Grouper")
+        self.setModal(True)
+        self.setMinimumWidth(420)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        title = QLabel("Choose a folder to start")
+        title.setStyleSheet("font-size: 13px; font-weight: bold; color: #333;")
+        layout.addWidget(title)
+
+        folder_layout = QVBoxLayout()
+        folder_layout.setSpacing(6)
+        folder_row = QHBoxLayout()
+        self.select_button = QPushButton("Select Folder")
+        self.select_button.clicked.connect(self.select_folder)
+        folder_row.addWidget(self.select_button)
+        folder_row.addStretch()
+        folder_layout.addLayout(folder_row)
+
+        self.folder_label = ElidedLabel("No folder selected")
+        self.folder_label.setStyleSheet("color: #666;")
+        self.folder_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.folder_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.folder_label.setMinimumWidth(0)
+        folder_layout.addWidget(self.folder_label)
+        layout.addLayout(folder_layout)
+
+        self.hide_checkbox = QCheckBox("Hide out-of-focus photos")
+        self.hide_checkbox.setChecked(self.hide_out_of_focus)
+        self.hide_checkbox.stateChanged.connect(self.on_hide_changed)
+        layout.addWidget(self.hide_checkbox)
+
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Cancel | QDialogButtonBox.Ok)
+        start_button = self.button_box.button(QDialogButtonBox.Ok)
+        start_button.setText("Start")
+        start_button.setEnabled(False)
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
+
+    def select_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Photo Folder")
+        if folder:
+            self.selected_folder = folder
+            self.folder_label.set_full_text(folder)
+            self.button_box.button(QDialogButtonBox.Ok).setEnabled(True)
+
+    def on_hide_changed(self, state: int):
+        self.hide_out_of_focus = state == Qt.Checked
+
 class ProcessingThread(QThread):
     """Thread for background image processing."""
     
     progress_updated = Signal(int, str)  # progress percentage, status message
-    processing_finished = Signal(list, dict, list)  # list of groups, embeddings dict, similarities
-    images_scanned = Signal(list)  # Emit scanned images immediately for display
+    processing_finished = Signal(list, dict, list, dict, list)  # groups, embeddings, similarities, focus_scores, filtered_out
+    images_scanned = Signal(list, int)  # Emit scanned images immediately for display (paths, filtered_count)
     
-    def __init__(self, folder_path: str, threshold: float):
+    def __init__(self, folder_path: str, threshold: float, hide_out_of_focus: bool, focus_threshold: float):
         super().__init__()
         self.folder_path = folder_path
         self.threshold = threshold
+        self.hide_out_of_focus = hide_out_of_focus
+        self.focus_threshold = focus_threshold
         
     def run(self):
         try:
@@ -35,15 +133,56 @@ class ProcessingThread(QThread):
             image_paths.sort()
             if not image_paths:
                 self.progress_updated.emit(100, "No images found")
-                self.processing_finished.emit([], {}, [])
+                self.processing_finished.emit([], {}, [], {}, [])
                 return
-            
+
+            focus_scores = {}
+            filtered_out = []
+
+            if self.hide_out_of_focus:
+                from core.focus_detector import compute_focus_scores
+
+                self.progress_updated.emit(12, f"Found {len(image_paths)} images, checking focus...")
+                focus_start = 12
+                focus_end = 18
+
+                def focus_progress_callback(current_idx: int, total: int, current_path: str):
+                    progress = focus_start + int((focus_end - focus_start) * current_idx / total)
+                    self.progress_updated.emit(progress, f"Checking focus {current_idx}/{total}")
+
+                focus_scores = compute_focus_scores(
+                    image_paths,
+                    progress_callback=focus_progress_callback,
+                )
+                threshold = float(self.focus_threshold)
+                filtered_paths = []
+                for path in image_paths:
+                    score = focus_scores.get(path, 0.0)
+                    if score >= threshold:
+                        filtered_paths.append(path)
+                    else:
+                        filtered_out.append(path)
+
+                if filtered_out:
+                    self.progress_updated.emit(
+                        focus_end,
+                        f"Filtered {len(filtered_out)} out-of-focus images",
+                    )
+
+                image_paths = filtered_paths
+                if not image_paths:
+                    self.progress_updated.emit(100, "No in-focus images found")
+                    self.images_scanned.emit([], len(filtered_out))
+                    self.processing_finished.emit([], {}, [], focus_scores, filtered_out)
+                    return
+            else:
+                self.progress_updated.emit(12, f"Found {len(image_paths)} images, extracting features...")
+
             # Emit scanned images immediately so UI can start displaying them
-            self.images_scanned.emit(image_paths)
-            self.progress_updated.emit(12, f"Found {len(image_paths)} images, extracting features...")
+            self.images_scanned.emit(image_paths, len(filtered_out))
             
             # Step 2: Initialize embedder and fit PCA
-            self.progress_updated.emit(15, "Initializing embedder...")
+            self.progress_updated.emit(19, "Initializing embedder...")
             from core.embedder import ImageEmbedder
             embedder = ImageEmbedder()
             
@@ -83,24 +222,33 @@ class ProcessingThread(QThread):
             print(f"Clusters sorted by inter-cluster similarity: {len(sorted_groups)} groups")
             
             self.progress_updated.emit(100, f"Found {len(sorted_groups)} groups")
-            self.processing_finished.emit(sorted_groups, embeddings, sorted_similarities)
+            self.processing_finished.emit(
+                sorted_groups,
+                embeddings,
+                sorted_similarities,
+                focus_scores,
+                filtered_out,
+            )
             
         except Exception as e:
             print(f"DEBUG: Error: {str(e)}")
             self.progress_updated.emit(100, f"Error: {str(e)}")
-            self.processing_finished.emit([], {}, [])
+            self.processing_finished.emit([], {}, [], {}, [])
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Photo Grouper")
         self.setGeometry(100, 100, 1200, 800)
+        self._startup_prompt_shown = False
         
         # Data
         self.current_folder = ""
         self.current_groups = []
         self.current_embeddings = {}
         self.all_image_paths = []  # Store all scanned images
+        self.focus_scores = {}
+        self.out_of_focus_images = []
         
         # Global selection state - tracks selected images across all clusters
         self.global_selected_images = set()
@@ -132,7 +280,7 @@ class MainWindow(QMainWindow):
         controls_layout.addStretch()
 
         # Preset menu for grouping tightness
-        from PySide6.QtWidgets import QSpinBox, QCheckBox
+        from PySide6.QtWidgets import QSpinBox
         controls_layout.addWidget(QLabel("Grouping:"))
 
         self.grouping_button = QToolButton()
@@ -224,6 +372,32 @@ class MainWindow(QMainWindow):
         other_controls_layout.addWidget(self.sort_clusters_checkbox)
 
         advanced_layout.addLayout(other_controls_layout)
+
+        # Focus filtering controls
+        focus_controls_layout = QHBoxLayout()
+        self.hide_out_of_focus_checkbox = QCheckBox("Hide out-of-focus photos")
+        self.hide_out_of_focus_checkbox.setChecked(True)
+        self.hide_out_of_focus_checkbox.setToolTip("Hide blurry images based on sharpness score")
+        self.hide_out_of_focus_checkbox.stateChanged.connect(self.on_focus_filter_changed)
+        focus_controls_layout.addWidget(self.hide_out_of_focus_checkbox)
+
+        focus_controls_layout.addStretch()
+
+        focus_controls_layout.addWidget(QLabel("Focus threshold:"))
+        self.focus_threshold_slider = QSlider(Qt.Horizontal)
+        self.focus_threshold_slider.setMinimum(10)
+        self.focus_threshold_slider.setMaximum(500)
+        self.focus_threshold_slider.setValue(DEFAULT_FOCUS_THRESHOLD)
+        self.focus_threshold_slider.valueChanged.connect(self.on_focus_threshold_changed)
+        self.focus_threshold_slider.sliderReleased.connect(self.on_focus_threshold_released)
+        focus_controls_layout.addWidget(self.focus_threshold_slider)
+
+        self.focus_threshold_label = QLabel(str(DEFAULT_FOCUS_THRESHOLD))
+        self.focus_threshold_label.setMinimumWidth(40)
+        focus_controls_layout.addWidget(self.focus_threshold_label)
+
+        advanced_layout.addLayout(focus_controls_layout)
+        self._update_focus_controls_enabled()
         layout.addWidget(self.advanced_panel)
 
         self._update_grouping_preset_ui(self.threshold_slider.value() / 100.0)
@@ -298,6 +472,20 @@ class MainWindow(QMainWindow):
 
         self.view_mode = ""
         self.set_view_mode("grouped")
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._startup_prompt_shown:
+            self._startup_prompt_shown = True
+            QTimer.singleShot(0, self._show_startup_dialog)
+
+    def _show_startup_dialog(self):
+        dialog = StartupDialog(self, hide_out_of_focus=self.hide_out_of_focus_checkbox.isChecked())
+        if dialog.exec() == QDialog.Accepted and dialog.selected_folder:
+            self.hide_out_of_focus_checkbox.setChecked(dialog.hide_out_of_focus)
+            self.current_folder = dialog.selected_folder
+            self.folder_label.setText(f"Folder: {os.path.basename(self.current_folder)}")
+            self.process_folder()
         
     def select_folder(self):
         """Open folder selection dialog."""
@@ -319,6 +507,7 @@ class MainWindow(QMainWindow):
         self.selected_tray.sync_selected_images(self.global_selected_images)
         self.grouped_photos_view.set_summary_text("")
         self.grouped_photos_view.sync_selected_counts(self.global_selected_images)
+        self._update_selected_tray_visibility()
         
         # Show progress
         self.progress_bar.setVisible(True)
@@ -327,7 +516,14 @@ class MainWindow(QMainWindow):
         
         # Start processing thread
         threshold = self.threshold_slider.value() / 100.0
-        self.processing_thread = ProcessingThread(self.current_folder, threshold)
+        hide_out_of_focus = self.hide_out_of_focus_checkbox.isChecked()
+        focus_threshold = float(self.focus_threshold_slider.value())
+        self.processing_thread = ProcessingThread(
+            self.current_folder,
+            threshold,
+            hide_out_of_focus,
+            focus_threshold,
+        )
         self.processing_thread.progress_updated.connect(self.on_progress_updated)
         self.processing_thread.images_scanned.connect(self.on_images_scanned)
         self.processing_thread.processing_finished.connect(self.on_processing_finished)
@@ -342,27 +538,45 @@ class MainWindow(QMainWindow):
         if hasattr(self.grouped_photos_view, 'update_processing_progress'):
             self.grouped_photos_view.update_processing_progress(percentage, message)
     
-    def on_images_scanned(self, image_paths: List[str]):
+    def on_images_scanned(self, image_paths: List[str], hidden_count: int):
         """Handle immediate display of scanned images before processing."""
         # Store the scanned images
         self.all_image_paths = image_paths
         
         # Immediately populate the All Photos view
-        self.all_photos_view.set_images(image_paths)
+        self.all_photos_view.set_images(image_paths, hidden_count)
         self.set_view_mode("all")
 
         # Keep grouped view showing processing with initial status
+        focus_note = ""
+        if hidden_count:
+            focus_note = f" ({hidden_count} hidden out-of-focus)"
         self.grouped_photos_view.show_processing_message(
-            f"Found {len(image_paths)} images\nExtracting image features..."
+            f"Found {len(image_paths)} images{focus_note}\nExtracting image features..."
         )
     
-    def on_processing_finished(self, groups: List[List[str]], embeddings: Dict[str, np.ndarray], similarities: List[float]):
+    def on_processing_finished(
+        self,
+        groups: List[List[str]],
+        embeddings: Dict[str, np.ndarray],
+        similarities: List[float],
+        focus_scores: Dict[str, float],
+        filtered_out: List[str],
+    ):
         """Handle completion of processing."""
         self.current_groups = groups
         self.current_embeddings = embeddings
         self.current_similarities = similarities
+        self.focus_scores = focus_scores or {}
+        self.out_of_focus_images = filtered_out or []
         self.progress_bar.setVisible(False)
         self.folder_button.setEnabled(True)
+
+        hidden_count = len(self.out_of_focus_images)
+        if hidden_count:
+            for image_path in list(self.global_selected_images):
+                if image_path in self.out_of_focus_images:
+                    self.remove_from_global_selection(image_path)
         
         # Extract all image paths from groups
         self.all_image_paths = []
@@ -378,12 +592,15 @@ class MainWindow(QMainWindow):
             self.grouped_photos_view.set_groups(groups, min_display_size, similarities)
             self.group_detail_view.clear()
             self.selected_tray.sync_selected_images(self.global_selected_images)
+            self._update_selected_tray_visibility()
             
             total_images = sum(len(g) for g in groups)
             
             # Calculate actual displayed group count (accounting for singles consolidation)
             displayed_count = self._calculate_displayed_group_count(groups, min_display_size)
             summary_text = f"Found {displayed_count} groups with {total_images} total images"
+            if hidden_count:
+                summary_text += f" | Hidden {hidden_count} out-of-focus"
             self.grouped_photos_view.set_summary_text(summary_text)
             self.grouped_photos_view.sync_selected_counts(self.global_selected_images)
             
@@ -406,15 +623,25 @@ class MainWindow(QMainWindow):
                 status_parts.append(f"{cached_count} cached embeddings")
             if dedup_groups:
                 status_parts.append(f"{len(dedup_groups)} groups ready for deduplication")
+            if hidden_count:
+                status_parts.append(f"{hidden_count} hidden out-of-focus")
             self.status_label.setText(" | ".join(status_parts))
         else:
             self.all_photos_view.clear()
             self.grouped_photos_view.clear()
             self.group_detail_view.clear()
             self.selected_tray.sync_selected_images(self.global_selected_images)
+            self._update_selected_tray_visibility()
             # self.dedup_button.setEnabled(False)
-            self.grouped_photos_view.set_summary_text("No similar images found")
-            self.status_label.setText("No similar images found or processing failed")
+            if hidden_count and not embeddings:
+                self.grouped_photos_view.set_summary_text("No in-focus images found")
+                self.status_label.setText(f"Filtered {hidden_count} out-of-focus images")
+            else:
+                self.grouped_photos_view.set_summary_text("No similar images found")
+                status_text = "No similar images found or processing failed"
+                if hidden_count:
+                    status_text = f"{status_text} | {hidden_count} hidden out-of-focus"
+                self.status_label.setText(status_text)
             self.grouped_photos_view.sync_selected_counts(self.global_selected_images)
     
     def apply_preset(self, threshold: float):
@@ -445,6 +672,11 @@ class MainWindow(QMainWindow):
 
         self.grouping_button.setText(label)
 
+    def _update_focus_controls_enabled(self):
+        enabled = self.hide_out_of_focus_checkbox.isChecked()
+        self.focus_threshold_slider.setEnabled(enabled)
+        self.focus_threshold_label.setEnabled(enabled)
+
     def toggle_advanced_settings(self, checked: bool = None):
         """Toggle visibility of advanced settings panel."""
         if checked is None:
@@ -467,6 +699,28 @@ class MainWindow(QMainWindow):
         # If we have current data, reprocess with new threshold
         if self.current_folder and hasattr(self, 'current_embeddings') and self.current_embeddings:
             self.regroup_with_threshold(threshold)
+
+    def on_focus_filter_changed(self):
+        """Handle focus filter toggle."""
+        self._update_focus_controls_enabled()
+        if self.processing_thread and self.processing_thread.isRunning():
+            return
+        if self.current_folder:
+            self.process_folder()
+
+    def on_focus_threshold_changed(self):
+        """Handle focus threshold slider changes."""
+        value = self.focus_threshold_slider.value()
+        self.focus_threshold_label.setText(str(value))
+
+    def on_focus_threshold_released(self):
+        """Apply focus threshold changes after slider release."""
+        if not self.hide_out_of_focus_checkbox.isChecked():
+            return
+        if self.processing_thread and self.processing_thread.isRunning():
+            return
+        if self.current_folder:
+            self.process_folder()
     
     def regroup_with_threshold(self, threshold: float):
         """Regroup existing embeddings with new threshold."""
@@ -626,6 +880,7 @@ class MainWindow(QMainWindow):
         self.group_detail_view.clear_selection()
         self.selected_tray.clear_selection()
         self.grouped_photos_view.sync_selected_counts(self.global_selected_images)
+        self._update_selected_tray_visibility()
     
     def add_to_global_selection(self, image_path: str):
         """Add an image to global selection."""
