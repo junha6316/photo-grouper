@@ -71,7 +71,18 @@ class SelectedTray(QWidget):
             }
         """
 
-        tool_button_style = button_style.replace("QPushButton", "QToolButton")
+        tool_button_style = button_style.replace("QPushButton", "QToolButton") + """
+            QToolButton {
+                padding-right: 18px;
+            }
+            QToolButton::menu-indicator {
+                subcontrol-origin: padding;
+                subcontrol-position: center right;
+                right: 6px;
+                width: 8px;
+                height: 8px;
+            }
+        """
 
         primary_style = """
             QPushButton {

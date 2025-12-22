@@ -4,10 +4,61 @@ Image widget components for displaying and interacting with images.
 
 import os
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QCheckBox
+from PySide6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QLabel,
+    QPushButton,
+    QCheckBox,
+    QGraphicsDropShadowEffect,
+)
 from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtGui import QColor
 
 from ui.utils.async_image_loader import get_async_loader, ImageLoadResult
+
+
+class ShadowCheckBox(QCheckBox):
+    """Checkbox with a drop shadow to emulate CSS box-shadow."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._hovered = False
+        self._shadow = QGraphicsDropShadowEffect(self)
+        self._shadow.setOffset(0, 2)
+        self.setGraphicsEffect(self._shadow)
+        self.toggled.connect(lambda _checked: self._update_shadow())
+        self._update_shadow()
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self._update_shadow()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self._update_shadow()
+        super().leaveEvent(event)
+
+    def _update_shadow(self):
+        if self.isChecked():
+            if self._hovered:
+                color = QColor(0, 85, 153, 128)
+                blur = 8
+            else:
+                color = QColor(0, 122, 204, 102)
+                blur = 6
+        else:
+            if self._hovered:
+                color = QColor(0, 122, 204, 77)
+                blur = 6
+            else:
+                color = QColor(0, 0, 0, 51)
+                blur = 4
+
+        self._shadow.setBlurRadius(blur)
+        self._shadow.setColor(color)
+        self._shadow.setOffset(0, 2)
 
 
 class ImageCard(QWidget):
@@ -45,7 +96,7 @@ class ImageCard(QWidget):
         self.image_widget.move(0, 0)
         
         # Checkbox overlay in top-right corner - increased size for better visibility
-        self.checkbox = QCheckBox()
+        self.checkbox = ShadowCheckBox()
         self.checkbox.setParent(image_container)
         self.checkbox.setFixedSize(36, 36)  # Increased from 28 to 36
         self.checkbox.move(self.thumbnail_size - 26, 5)  # Adjusted position
@@ -64,23 +115,19 @@ class ImageCard(QWidget):
                 border-radius: 6px;
                 border: 2.5px solid rgba(0, 0, 0, 0.4);
                 background-color: rgba(255, 255, 255, 0.98);
-                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
             }
             QCheckBox::indicator:unchecked:hover {
                 border: 2.5px solid #007acc;
                 background-color: rgba(240, 248, 255, 0.98);
-                box-shadow: 0 2px 6px rgba(0, 122, 204, 0.3);
             }
             QCheckBox::indicator:checked {
                 border: 2.5px solid #007acc;
                 background-color: #007acc;
                 color: white;
-                box-shadow: 0 2px 6px rgba(0, 122, 204, 0.4);
             }
             QCheckBox::indicator:checked:hover {
                 background-color: #005599;
                 border: 2.5px solid #005599;
-                box-shadow: 0 2px 8px rgba(0, 85, 153, 0.5);
             }
         """
 
@@ -561,7 +608,8 @@ class SelectedThumbnail(QWidget):
         
         # Position remove button in top-right corner
         self.remove_button.setParent(image_container)
-        self.remove_button.move(self.thumbnail_size - 15, -5)
+        self.remove_button.move(self.thumbnail_size - 12, 2)
+        self.remove_button.raise_()
         
         layout.addWidget(image_container)
         

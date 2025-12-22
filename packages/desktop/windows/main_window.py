@@ -70,7 +70,7 @@ class ProcessingThread(QThread):
             # Step 5: Group by similarity (always include singles for display control)
             self.progress_updated.emit(90, "Grouping similar images...")
             grouper = PhotoGrouper()
-            groups, similarities = grouper.group_by_threshold(embeddings, self.threshold, min_group_size=1)
+            groups, similarities = grouper.group_by_threshold(embeddings, self.threshold, min_group_size=1, strict_mode="min")
             
             # Step 6: Sort clusters by inter-cluster similarity (if enabled)
             
@@ -157,6 +157,25 @@ class MainWindow(QMainWindow):
 
         self.grouping_button.setMenu(self.grouping_menu)
         self.grouping_button.setText("Normal")
+        self.grouping_button.setStyleSheet("""
+            QToolButton {
+                padding: 3px 18px 3px 8px;
+                font-size: 11px;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                background-color: #f8f8f8;
+            }
+            QToolButton:hover:enabled {
+                background-color: #e8e8e8;
+            }
+            QToolButton::menu-indicator {
+                subcontrol-origin: padding;
+                subcontrol-position: center right;
+                right: 6px;
+                width: 8px;
+                height: 8px;
+            }
+        """)
         controls_layout.addWidget(self.grouping_button)
 
         layout.addLayout(controls_layout)
