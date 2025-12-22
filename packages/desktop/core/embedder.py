@@ -28,7 +28,7 @@ except ImportError:
 
 
 class ImageEmbedder:
-    def __init__(self, model_type: str = "mobilenetv3_small", device: Optional[str] = None, pca_components: int = 512):
+    def __init__(self, model_type: str = "vgg16", device: Optional[str] = None, pca_components: int = 512):
         """
         Initialize the embedder with specified model type.
         
@@ -110,11 +110,21 @@ class ImageEmbedder:
             print(f"Requested provider {self.device} unavailable, falling back to CPUExecutionProvider")
             self.device = "CPUExecutionProvider"
 
-        self.session = ort.InferenceSession(
-            str(onnx_path),
-            sess_options,
-            providers=[self.device],
-        )
+        # Use bytes path to support external data files properly
+        try:
+            self.session = ort.InferenceSession(
+                str(onnx_path).encode('utf-8'),
+                sess_options,
+                providers=[self.device],
+            )
+        except Exception as e:
+            # Fallback: try with string path
+            print(f"Failed to load with bytes path, trying string path: {e}")
+            self.session = ort.InferenceSession(
+                str(onnx_path),
+                sess_options,
+                providers=[self.device],
+            )
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
 

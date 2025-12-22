@@ -14,11 +14,13 @@ class GroupedPhotosView(QWidget):
     """View for displaying grouped photos using the existing PreviewPanel."""
     
     selection_changed = Signal(str, bool)  # image_path, is_selected
+    group_clicked = Signal(list, int, bool, object)  # images, group_number, is_singles, similarity
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self.current_groups: List[List[str]] = []
         self.main_window = parent
+        self.summary_label = None
         
         self.init_ui()
     
@@ -26,12 +28,14 @@ class GroupedPhotosView(QWidget):
         """Initialize the UI."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
         
         # Use QStackedWidget to properly switch between views
         self.stacked_widget = QStackedWidget()
         
         # Create preview panel with scroll area
         self.preview_panel = PreviewPanel()
+        self.preview_panel.group_clicked.connect(self.on_group_clicked)
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidget(self.preview_panel)
         self.scroll_area.setWidgetResizable(True)
@@ -58,6 +62,14 @@ class GroupedPhotosView(QWidget):
         self.stacked_widget.setCurrentIndex(0)
         
         layout.addWidget(self.stacked_widget)
+
+        self.summary_label = QLabel("")
+        self.summary_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.summary_label.setStyleSheet(
+            "color: #666; font-size: 11px; padding: 6px 8px; border-top: 1px solid #eee;"
+        )
+        self.summary_label.setVisible(False)
+        layout.addWidget(self.summary_label)
     
     def set_groups(self, groups: List[List[str]], min_display_size: int = 2, similarities: List[float] = None):
         """Set the photo groups to display."""
@@ -71,6 +83,7 @@ class GroupedPhotosView(QWidget):
         self.processing_label.setText(f"⏳ {message}")
         # Switch to processing label
         self.stacked_widget.setCurrentIndex(1)
+        self.set_summary_text("")
     
     def update_processing_progress(self, progress: int, message: str):
         """Update the processing message with progress."""
@@ -84,10 +97,27 @@ class GroupedPhotosView(QWidget):
         self.processing_label.setText("No groups to display")
         # Switch back to scroll area (empty state)
         self.stacked_widget.setCurrentIndex(0)
+        self.set_summary_text("")
     
     def get_preview_panel(self) -> PreviewPanel:
         """Get the underlying preview panel."""
         return self.preview_panel
+
+    def set_summary_text(self, text: str):
+        """Update the summary text shown below the group list."""
+        if not self.summary_label:
+            return
+        self.summary_label.setText(text)
+        self.summary_label.setVisible(bool(text))
+
+    def sync_selected_counts(self, selected_images):
+        """Sync selected counts in the group list."""
+        if self.preview_panel:
+            self.preview_panel.update_selected_counts(selected_images)
+
+    def on_group_clicked(self, images: List[str], group_number: int, is_singles_group: bool, similarity):
+        """Handle group click from preview panel."""
+        self.group_clicked.emit(images, group_number, is_singles_group, similarity)
     
     def sync_selection(self, image_path: str, is_selected: bool):
         """Sync selection state from other views."""

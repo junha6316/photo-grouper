@@ -44,54 +44,58 @@ class ImageCard(QWidget):
         self.image_widget.setParent(image_container)
         self.image_widget.move(0, 0)
         
-        # Checkbox overlay in top-right corner
+        # Checkbox overlay in top-right corner - increased size for better visibility
         self.checkbox = QCheckBox()
         self.checkbox.setParent(image_container)
-        self.checkbox.setFixedSize(28, 28)
-        self.checkbox.move(self.thumbnail_size - 18, 3)
+        self.checkbox.setFixedSize(36, 36)  # Increased from 28 to 36
+        self.checkbox.move(self.thumbnail_size - 26, 5)  # Adjusted position
         self.checkbox.setChecked(self.is_selected)
         self.checkbox.toggled.connect(self.on_checkbox_toggled)
         self.checkbox.setCursor(Qt.PointingHandCursor)
-        
-        # Create checkmark using Unicode character for better compatibility
+
+        # Enhanced checkbox style with larger, more visible design
         checkbox_style = """
             QCheckBox {
                 background-color: transparent;
             }
             QCheckBox::indicator {
-                width: 22px;
-                height: 22px;
-                border-radius: 4px;
-                border: 2px solid rgba(0, 0, 0, 0.3);
-                background-color: rgba(255, 255, 255, 0.95);
+                width: 30px;
+                height: 30px;
+                border-radius: 6px;
+                border: 2.5px solid rgba(0, 0, 0, 0.4);
+                background-color: rgba(255, 255, 255, 0.98);
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
             }
             QCheckBox::indicator:unchecked:hover {
-                border: 2px solid #007acc;
-                background-color: rgba(240, 248, 255, 0.95);
+                border: 2.5px solid #007acc;
+                background-color: rgba(240, 248, 255, 0.98);
+                box-shadow: 0 2px 6px rgba(0, 122, 204, 0.3);
             }
             QCheckBox::indicator:checked {
-                border: 2px solid #007acc;
+                border: 2.5px solid #007acc;
                 background-color: #007acc;
                 color: white;
+                box-shadow: 0 2px 6px rgba(0, 122, 204, 0.4);
             }
             QCheckBox::indicator:checked:hover {
                 background-color: #005599;
-                border: 2px solid #005599;
+                border: 2.5px solid #005599;
+                box-shadow: 0 2px 8px rgba(0, 85, 153, 0.5);
             }
         """
-        
+
         self.checkbox.setStyleSheet(checkbox_style)
-        
-        # Add checkmark overlay label (only visible when checked)
+
+        # Add checkmark overlay label (only visible when checked) - larger size
         self.checkmark = QLabel("✓")
         self.checkmark.setParent(self.checkbox)
-        self.checkmark.setFixedSize(22, 22)
-        self.checkmark.move(4, 2)
+        self.checkmark.setFixedSize(30, 30)  # Increased from 22 to 30
+        self.checkmark.move(3, 3)  # Adjusted position
         self.checkmark.setAlignment(Qt.AlignCenter)
         self.checkmark.setStyleSheet("""
             QLabel {
                 color: white;
-                font-size: 16px;
+                font-size: 22px;
                 font-weight: bold;
                 background-color: transparent;
             }
@@ -297,9 +301,15 @@ class ImageWidget(QLabel):
         self.is_loading = False
         
         if result.success and result.pixmap:
-            # Successfully loaded image - the async loader already scaled it
-            # so we can use it directly without additional scaling
-            self.setPixmap(result.pixmap)
+            # Normalize pixmap size to avoid tiny renders from small originals or HiDPI DPR.
+            pixmap = result.pixmap.scaled(
+                self.thumbnail_size,
+                self.thumbnail_size,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            )
+            pixmap.setDevicePixelRatio(1.0)
+            self.setPixmap(pixmap)
             self.setToolTip(f"{os.path.basename(self.image_path)}\n{self.image_path}")
             # Reset stylesheet to remove loading text styling
             self.setStyleSheet("""

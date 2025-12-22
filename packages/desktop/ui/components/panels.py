@@ -13,10 +13,11 @@ from .image_widgets import SelectedThumbnail
 class SelectedImagesPanel(QWidget):
     """Panel showing selected images as thumbnails on the right side."""
     
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, show_header: bool = True):
         super().__init__(parent)
         self.selected_images = set()
         self.thumbnail_widgets = {}
+        self.show_header = show_header
         self.init_ui()
     
     def init_ui(self):
@@ -30,13 +31,15 @@ class SelectedImagesPanel(QWidget):
         header_label.setStyleSheet(
             "font-size: 14px; font-weight: bold; color: #333; margin-bottom: 5px;"
         )
-        layout.addWidget(header_label)
         
         self.count_label = QLabel("0 selected")
         self.count_label.setStyleSheet(
             "font-size: 12px; color: #666; margin-bottom: 10px;"
         )
-        layout.addWidget(self.count_label)
+        
+        if self.show_header:
+            layout.addWidget(header_label)
+            layout.addWidget(self.count_label)
         
         # Scroll area for thumbnails
         self.scroll_area = QScrollArea()

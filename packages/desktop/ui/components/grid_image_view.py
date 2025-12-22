@@ -49,8 +49,8 @@ class GridImageView(QWidget):
         # Main container for flow layout
         self.scroll_widget = QWidget()
         self.scroll_layout = FlowLayout(self.scroll_widget)
-        self.scroll_layout.setSpacing(10)
-        self.scroll_layout.setContentsMargins(15, 15, 15, 15)
+        self.scroll_layout.setSpacing(15)  # Increased from 10 to 15
+        self.scroll_layout.setContentsMargins(20, 20, 20, 20)  # Increased from 15 to 20
 
         self.scroll_area.setWidget(self.scroll_widget)
 

@@ -1,10 +1,10 @@
 from PySide6.QtWidgets import (
-    QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, 
+    QMainWindow, QVBoxLayout, QHBoxLayout, QWidget,
     QPushButton, QFileDialog, QSlider, QLabel, QProgressBar,
-    QMessageBox, QTabWidget
+    QMessageBox, QSplitter, QStackedWidget, QFrame, QComboBox, QToolButton, QMenu
 )
 from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QShortcut, QKeySequence
+from PySide6.QtGui import QAction
 import os
 from typing import List, Dict
 import numpy as np
@@ -12,7 +12,7 @@ import numpy as np
 from core.scanner import ImageScanner
 
 from core.grouper import PhotoGrouper
-from ui.views import AllPhotosView, GroupedPhotosView, SelectedPhotosView
+from ui.views import AllPhotosView, GroupedPhotosView, GroupDetailView, SelectedTray
 
 class ProcessingThread(QThread):
     """Thread for background image processing."""
@@ -120,114 +120,165 @@ class MainWindow(QMainWindow):
         
         # Top controls
         controls_layout = QHBoxLayout()
-        
+
         # Folder selection
         self.folder_button = QPushButton("Select Folder")
         self.folder_button.clicked.connect(self.select_folder)
         controls_layout.addWidget(self.folder_button)
-        
+
         self.folder_label = QLabel("No folder selected")
         controls_layout.addWidget(self.folder_label)
-        
+
         controls_layout.addStretch()
-        
-        # Minimum group size
+
+        # Preset menu for grouping tightness
         from PySide6.QtWidgets import QSpinBox, QCheckBox
-        controls_layout.addWidget(QLabel("Min group size:"))
-        self.min_group_spinbox = QSpinBox()
-        self.min_group_spinbox.setMinimum(1)
-        self.min_group_spinbox.setMaximum(10)
-        self.min_group_spinbox.setValue(2)  # Default to groups with 2+ images
-        self.min_group_spinbox.valueChanged.connect(self.on_min_group_changed)
-        controls_layout.addWidget(self.min_group_spinbox)
-        
-        # Cluster similarity sorting toggle
-        self.sort_clusters_checkbox = QCheckBox("Sort similar clusters together")
-        self.sort_clusters_checkbox.setChecked(True)  # Default enabled
-        self.sort_clusters_checkbox.setToolTip("Group similar clusters together for better visualization")
-        self.sort_clusters_checkbox.stateChanged.connect(self.on_cluster_sort_changed)
-        controls_layout.addWidget(self.sort_clusters_checkbox)
-        
-        # Deduplication Session button
-        # self.dedup_button = QPushButton("🎯 Start Deduplication")
-        # self.dedup_button.setEnabled(False)
-        # self.dedup_button.clicked.connect(self.start_deduplication_session)
-        # self.dedup_button.setStyleSheet("""
-        #     QPushButton {
-        #         padding: 8px 15px;
-        #         font-size: 12px;
-        #         font-weight: bold;
-        #         border: 2px solid #e74c3c;
-        #         border-radius: 4px;
-        #         background-color: #fadbd8;
-        #         color: #c0392b;f
-        #         min-width: 140px;
-        #     }
-        #     QPushButton:hover:enabled {
-        #         background-color: #f5b7b1;
-        #     }
-        #     QPushButton:disabled {
-        #         color: #999;
-        #         background-color: #f5f5f5;
-        #         border-color: #ddd;
-        #     }
-        # """)
-        # self.dedup_button.setToolTip("Start a champion vs challenger deduplication session")
-        # controls_layout.addWidget(self.dedup_button)
-        
-        
+        controls_layout.addWidget(QLabel("Grouping:"))
+
+        self.grouping_button = QToolButton()
+        self.grouping_button.setPopupMode(QToolButton.InstantPopup)
+        self.grouping_menu = QMenu(self.grouping_button)
+        self.grouping_preset_actions = {}
+
+        for label, threshold in (("Strict", 0.90), ("Normal", 0.85), ("Loose", 0.75)):
+            action = QAction(f"{label} ({threshold:.2f})", self)
+            action.setCheckable(True)
+            action.triggered.connect(lambda checked=False, t=threshold: self.apply_preset(t))
+            self.grouping_menu.addAction(action)
+            self.grouping_preset_actions[label.lower()] = action
+
+        self.grouping_menu.addSeparator()
+
+        self.grouping_advanced_action = QAction("Advanced settings", self)
+        self.grouping_advanced_action.setCheckable(True)
+        self.grouping_advanced_action.setChecked(False)
+        self.grouping_advanced_action.triggered.connect(self.toggle_advanced_settings)
+        self.grouping_menu.addAction(self.grouping_advanced_action)
+
+        self.grouping_button.setMenu(self.grouping_menu)
+        self.grouping_button.setText("Normal")
+        controls_layout.addWidget(self.grouping_button)
+
         layout.addLayout(controls_layout)
-        
+
+        # Advanced settings panel (initially hidden)
+        self.advanced_panel = QFrame()
+        self.advanced_panel.setFrameShape(QFrame.StyledPanel)
+        self.advanced_panel.setVisible(False)
+        advanced_layout = QVBoxLayout(self.advanced_panel)
+
         # Threshold slider
         slider_layout = QHBoxLayout()
         slider_layout.addWidget(QLabel("Similarity Threshold:"))
-        
+
         self.threshold_slider = QSlider(Qt.Horizontal)
         self.threshold_slider.setMinimum(50)  # 0.50
         self.threshold_slider.setMaximum(99)  # 0.99
         self.threshold_slider.setValue(85)    # 0.85 default
         self.threshold_slider.valueChanged.connect(self.on_threshold_changed)
         slider_layout.addWidget(self.threshold_slider)
-        
+
         self.threshold_label = QLabel("0.85")
         self.threshold_label.setMinimumWidth(40)
         slider_layout.addWidget(self.threshold_label)
-        
-        layout.addLayout(slider_layout)
+        advanced_layout.addLayout(slider_layout)
+
+        # Other advanced controls
+        other_controls_layout = QHBoxLayout()
+
+        # Minimum group size
+        other_controls_layout.addWidget(QLabel("Min group size:"))
+        self.min_group_spinbox = QSpinBox()
+        self.min_group_spinbox.setMinimum(1)
+        self.min_group_spinbox.setMaximum(10)
+        self.min_group_spinbox.setValue(2)  # Default to groups with 2+ images
+        self.min_group_spinbox.valueChanged.connect(self.on_min_group_changed)
+        other_controls_layout.addWidget(self.min_group_spinbox)
+
+        other_controls_layout.addStretch()
+
+        # Cluster similarity sorting toggle
+        self.sort_clusters_checkbox = QCheckBox("Sort similar clusters together")
+        self.sort_clusters_checkbox.setChecked(True)  # Default enabled
+        self.sort_clusters_checkbox.setToolTip("Group similar clusters together for better visualization")
+        self.sort_clusters_checkbox.stateChanged.connect(self.on_cluster_sort_changed)
+        other_controls_layout.addWidget(self.sort_clusters_checkbox)
+
+        advanced_layout.addLayout(other_controls_layout)
+        layout.addWidget(self.advanced_panel)
+
+        self._update_grouping_preset_ui(self.threshold_slider.value() / 100.0)
         
         # Progress bar
+        from PySide6.QtWidgets import QSizePolicy
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
+        self.progress_bar.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         layout.addWidget(self.progress_bar)
         
         self.status_label = QLabel("")
+        self.status_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         layout.addWidget(self.status_label)
         
-        # Tab widget for different views
-        self.tab_widget = QTabWidget()
-        
-        # Create the three view tabs
+        # View mode selector
+        view_layout = QHBoxLayout()
+        view_layout.addWidget(QLabel("View:"))
+
+        self.view_combo = QComboBox()
+        self.view_combo.addItem("Grouped", "grouped")
+        self.view_combo.addItem("All Photos", "all")
+        self.view_combo.currentIndexChanged.connect(self.on_view_combo_changed)
+        view_layout.addWidget(self.view_combo)
+
+        view_layout.addStretch()
+        layout.addLayout(view_layout)
+
+        # Main workspace views
         self.all_photos_view = AllPhotosView(self)
         self.grouped_photos_view = GroupedPhotosView(self)
-        self.selected_photos_view = SelectedPhotosView(self)
-        
-        # Add tabs with icons and labels
-        self.tab_widget.addTab(self.all_photos_view, "📷 All Photos")
-        self.tab_widget.addTab(self.grouped_photos_view, "📁 Grouped")
-        self.tab_widget.addTab(self.selected_photos_view, "⭐ Selected")
-        
+        self.group_detail_view = GroupDetailView(self)
+        self.selected_tray = SelectedTray(self)
+
         # Connect selection signals for synchronization
-        self.all_photos_view.selection_changed.connect(self.on_selection_changed_from_tab)
-        self.selected_photos_view.selection_changed.connect(self.on_selection_changed_from_tab)
-        self.grouped_photos_view.selection_changed.connect(self.on_selection_changed_from_tab)
-        
-        # Connect tab change signal
-        self.tab_widget.currentChanged.connect(self.on_tab_changed)
-        
-        layout.addWidget(self.tab_widget)
-        
+        self.all_photos_view.selection_changed.connect(self.on_selection_changed_from_view)
+        self.group_detail_view.selection_changed.connect(self.on_selection_changed_from_view)
+        self.selected_tray.selection_changed.connect(self.on_selection_changed_from_view)
+
+        # Connect group click to detail view
+        self.grouped_photos_view.group_clicked.connect(self.on_group_clicked)
+
+        # Selected tray actions
+        self.selected_tray.clear_requested.connect(self.clear_global_selection)
+        self.selected_tray.review_requested.connect(self.open_selected_review)
+        self.selected_tray.export_requested.connect(self.export_selected_images)
+
+        # Center stack (all vs group detail)
+        self.center_stack = QStackedWidget()
+        self.center_stack.addWidget(self.all_photos_view)
+        self.center_stack.addWidget(self.group_detail_view)
+
+        # Layout with resizable panels
+        self.content_splitter = QSplitter(Qt.Horizontal)
+        self.content_splitter.setChildrenCollapsible(False)
+        self.content_splitter.addWidget(self.grouped_photos_view)
+        self.content_splitter.addWidget(self.center_stack)
+        self.content_splitter.addWidget(self.selected_tray)
+        self.content_splitter.setStretchFactor(0, 1)
+        self.content_splitter.setStretchFactor(1, 3)
+        self.content_splitter.setStretchFactor(2, 1)
+
+        self.grouped_photos_view.setMinimumWidth(300)
+        self.selected_tray.setMinimumWidth(260)
+        # Initial layout: 25% left panel, 75% center (selected tray hidden initially)
+        self.content_splitter.setSizes([360, 900, 0])
+
+        layout.addWidget(self.content_splitter, 1)
+
         # Keep reference to preview panel for compatibility
         self.preview_panel = self.grouped_photos_view.get_preview_panel()
+
+        self.view_mode = ""
+        self.set_view_mode("grouped")
         
     def select_folder(self):
         """Open folder selection dialog."""
@@ -242,17 +293,13 @@ class MainWindow(QMainWindow):
         if not self.current_folder:
             return
             
-        # Clear previous data and reset tab labels
+        # Clear previous data
         self.all_photos_view.clear()
         self.grouped_photos_view.clear()
-        self.selected_photos_view.update_selected_images()
-        
-        # Reset tab labels to show loading state
-        self.tab_widget.setTabText(0, "📷 All Photos (Loading...)")
-        self.tab_widget.setTabText(1, "📁 Grouped (Processing...)")
-        # Selected tab remains accessible
-        count = len(self.global_selected_images)
-        self.tab_widget.setTabText(2, f"⭐ Selected ({count})")
+        self.group_detail_view.clear()
+        self.selected_tray.sync_selected_images(self.global_selected_images)
+        self.grouped_photos_view.set_summary_text("")
+        self.grouped_photos_view.sync_selected_counts(self.global_selected_images)
         
         # Show progress
         self.progress_bar.setVisible(True)
@@ -281,15 +328,14 @@ class MainWindow(QMainWindow):
         # Store the scanned images
         self.all_image_paths = image_paths
         
-        # Immediately populate the All Photos tab
+        # Immediately populate the All Photos view
         self.all_photos_view.set_images(image_paths)
-        
-        # Update tab text to show count
-        self.tab_widget.setTabText(0, f"📷 All Photos ({len(image_paths)})")
-        
-        # Keep grouped tab showing processing with initial status
-        self.tab_widget.setTabText(1, "📁 Grouped (Processing...)")
-        self.grouped_photos_view.show_processing_message(f"Found {len(image_paths)} images\nExtracting image features...")
+        self.set_view_mode("all")
+
+        # Keep grouped view showing processing with initial status
+        self.grouped_photos_view.show_processing_message(
+            f"Found {len(image_paths)} images\nExtracting image features..."
+        )
     
     def on_processing_finished(self, groups: List[List[str]], embeddings: Dict[str, np.ndarray], similarities: List[float]):
         """Handle completion of processing."""
@@ -311,16 +357,16 @@ class MainWindow(QMainWindow):
             # Update all views (All photos already set in on_images_scanned)
             # Just update the grouped view with the final groups
             self.grouped_photos_view.set_groups(groups, min_display_size, similarities)
-            self.selected_photos_view.update_selected_images()
-            
-            # Update tab text to show final counts
-            self.tab_widget.setTabText(0, "📷 All Photos")
-            self.tab_widget.setTabText(1, "📁 Grouped")
+            self.group_detail_view.clear()
+            self.selected_tray.sync_selected_images(self.global_selected_images)
             
             total_images = sum(len(g) for g in groups)
             
             # Calculate actual displayed group count (accounting for singles consolidation)
             displayed_count = self._calculate_displayed_group_count(groups, min_display_size)
+            summary_text = f"Found {displayed_count} groups with {total_images} total images"
+            self.grouped_photos_view.set_summary_text(summary_text)
+            self.grouped_photos_view.sync_selected_counts(self.global_selected_images)
             
             # Enable deduplication button if we have groups suitable for deduplication
             dedup_groups = [g for g in groups if len(g) > 1]
@@ -333,24 +379,72 @@ class MainWindow(QMainWindow):
                 temp_embedder = ImageEmbedder()
                 cache_stats = temp_embedder.get_cache_stats()
                 cached_count = cache_stats.get('total_embeddings', 0)
-                cache_info = f" | {cached_count} cached embeddings"
             except Exception:
-                cache_info = ""
+                cached_count = 0
             
-            dedup_info = f" | {len(dedup_groups)} groups ready for deduplication" if dedup_groups else ""
-            self.status_label.setText(f"Found {displayed_count} groups with {total_images} total images{cache_info}{dedup_info}")
+            status_parts = []
+            if cached_count:
+                status_parts.append(f"{cached_count} cached embeddings")
+            if dedup_groups:
+                status_parts.append(f"{len(dedup_groups)} groups ready for deduplication")
+            self.status_label.setText(" | ".join(status_parts))
         else:
             self.all_photos_view.clear()
             self.grouped_photos_view.clear()
-            self.selected_photos_view.update_selected_images()
+            self.group_detail_view.clear()
+            self.selected_tray.sync_selected_images(self.global_selected_images)
             # self.dedup_button.setEnabled(False)
+            self.grouped_photos_view.set_summary_text("No similar images found")
             self.status_label.setText("No similar images found or processing failed")
+            self.grouped_photos_view.sync_selected_counts(self.global_selected_images)
     
+    def apply_preset(self, threshold: float):
+        """Apply a preset threshold value."""
+        # Update slider to match preset (will trigger on_threshold_changed)
+        slider_value = int(threshold * 100)
+        self.threshold_slider.setValue(slider_value)
+
+    def _update_grouping_preset_ui(self, threshold: float):
+        preset_name = None
+        if threshold == 0.90:
+            preset_name = "strict"
+            label = "Strict"
+        elif threshold == 0.85:
+            preset_name = "normal"
+            label = "Normal"
+        elif threshold == 0.75:
+            preset_name = "loose"
+            label = "Loose"
+        else:
+            label = f"Custom {threshold:.2f}"
+
+        for action in self.grouping_preset_actions.values():
+            action.setChecked(False)
+
+        if preset_name:
+            self.grouping_preset_actions[preset_name].setChecked(True)
+
+        self.grouping_button.setText(label)
+
+    def toggle_advanced_settings(self, checked: bool = None):
+        """Toggle visibility of advanced settings panel."""
+        if checked is None:
+            new_visible = not self.advanced_panel.isVisible()
+        else:
+            new_visible = checked
+
+        self.advanced_panel.setVisible(new_visible)
+        if hasattr(self, "grouping_advanced_action"):
+            self.grouping_advanced_action.blockSignals(True)
+            self.grouping_advanced_action.setChecked(new_visible)
+            self.grouping_advanced_action.blockSignals(False)
+
     def on_threshold_changed(self):
         """Handle threshold slider changes."""
         threshold = self.threshold_slider.value() / 100.0
         self.threshold_label.setText(f"{threshold:.2f}")
-        
+        self._update_grouping_preset_ui(threshold)
+
         # If we have current data, reprocess with new threshold
         if self.current_folder and hasattr(self, 'current_embeddings') and self.current_embeddings:
             self.regroup_with_threshold(threshold)
@@ -377,6 +471,7 @@ class MainWindow(QMainWindow):
             
             # Update grouped photos view
             self.grouped_photos_view.set_groups(sorted_groups, min_display_size, sorted_similarities)
+            self.group_detail_view.clear()
             
             # Update deduplication button availability
             dedup_groups = [g for g in sorted_groups if len(g) > 1]
@@ -384,8 +479,15 @@ class MainWindow(QMainWindow):
             
             # Calculate actual displayed group count (accounting for singles consolidation)
             displayed_count = self._calculate_displayed_group_count(sorted_groups, min_display_size)
-            dedup_info = f" | {len(dedup_groups)} groups ready for deduplication" if dedup_groups else ""
-            self.status_label.setText(f"Regrouped at {threshold:.2f}: {displayed_count} groups with {sum(len(g) for g in sorted_groups)} total images{dedup_info}")
+            total_images = sum(len(g) for g in sorted_groups)
+            summary_text = f"Found {displayed_count} groups with {total_images} total images"
+            self.grouped_photos_view.set_summary_text(summary_text)
+            self.grouped_photos_view.sync_selected_counts(self.global_selected_images)
+
+            status_parts = [f"Regrouped at {threshold:.2f}"]
+            if dedup_groups:
+                status_parts.append(f"{len(dedup_groups)} groups ready for deduplication")
+            self.status_label.setText(" | ".join(status_parts))
         except Exception as e:
             print(f"Regrouping error: {str(e)}")
             self.status_label.setText(f"Regrouping failed: {str(e)}")
@@ -404,6 +506,25 @@ class MainWindow(QMainWindow):
             threshold = self.threshold_slider.value() / 100.0
             self.regroup_with_threshold(threshold)
     
+    def _update_selected_tray_visibility(self):
+        """Show or hide the selected tray based on whether images are selected."""
+        has_selections = len(self.global_selected_images) > 0
+
+        # Get current splitter sizes
+        sizes = self.content_splitter.sizes()
+
+        if has_selections and sizes[2] == 0:
+            # Show the selected tray by giving it space
+            total_width = sum(sizes)
+            # Give 20% to selected tray, adjust center panel
+            new_tray_width = int(total_width * 0.2)
+            new_center_width = sizes[1] - new_tray_width
+            self.content_splitter.setSizes([sizes[0], new_center_width, new_tray_width])
+        elif not has_selections and sizes[2] > 0:
+            # Hide the selected tray by collapsing it
+            # Give its space back to center panel
+            self.content_splitter.setSizes([sizes[0], sizes[1] + sizes[2], 0])
+
     def _calculate_displayed_group_count(self, groups: list, min_display_size: int) -> int:
         """
         Calculate the actual number of groups that will be displayed to the user.
@@ -423,16 +544,57 @@ class MainWindow(QMainWindow):
             displayed_count += 1
             
         return displayed_count
-    
 
-    
-    def update_view_selected_button(self):
-        """Update the selected photos tab and count."""
-        count = len(self.global_selected_images)
-        # Update tab title with count
-        self.tab_widget.setTabText(2, f"⭐ Selected ({count})")
-        # Update selected photos view
-        self.selected_photos_view.update_selected_images()
+    def on_view_combo_changed(self, index: int):
+        """Handle view selector changes."""
+        mode = self.view_combo.itemData(index)
+        if mode:
+            self.set_view_mode(mode)
+
+    def set_view_mode(self, mode: str):
+        """Switch between grouped detail and all photos views."""
+        if mode == self.view_mode:
+            return
+
+        self.view_mode = mode
+        if mode == "grouped":
+            self.center_stack.setCurrentWidget(self.group_detail_view)
+        else:
+            self.center_stack.setCurrentWidget(self.all_photos_view)
+
+        index = self.view_combo.findData(mode)
+        if index >= 0 and index != self.view_combo.currentIndex():
+            self.view_combo.blockSignals(True)
+            self.view_combo.setCurrentIndex(index)
+            self.view_combo.blockSignals(False)
+
+    def on_group_clicked(self, images: List[str], group_number: int, is_singles_group: bool, similarity):
+        """Open a group in the detail view."""
+        self.group_detail_view.set_cluster(images, group_number, is_singles_group, similarity)
+        self.set_view_mode("grouped")
+
+    def open_selected_review(self):
+        """Open a review dialog for selected images."""
+        if not self.global_selected_images:
+            return
+
+        from ui.selected_view_dialog import SelectedViewDialog
+        dialog = SelectedViewDialog(list(self.global_selected_images), self)
+        dialog.exec()
+
+    def export_selected_images(self):
+        """Open export dialog for selected images."""
+        if not self.global_selected_images:
+            return
+
+        from ui.export_dialog import ExportDialog
+        dialog = ExportDialog(list(self.global_selected_images), self)
+        dialog.exec()
+
+    def update_selected_tray(self):
+        """Update the selected tray with current selections."""
+        self.selected_tray.sync_selected_images(self.global_selected_images)
+        self._update_selected_tray_visibility()
     
     def get_global_selected_images(self):
         """Get the set of globally selected image paths."""
@@ -441,42 +603,37 @@ class MainWindow(QMainWindow):
     def clear_global_selection(self):
         """Clear all global selections."""
         self.global_selected_images.clear()
-        self.update_view_selected_button()
+        self.all_photos_view.clear_selection()
+        self.group_detail_view.clear_selection()
+        self.selected_tray.clear_selection()
+        self.grouped_photos_view.sync_selected_counts(self.global_selected_images)
     
     def add_to_global_selection(self, image_path: str):
         """Add an image to global selection."""
+        if image_path in self.global_selected_images:
+            return
         self.global_selected_images.add(image_path)
-        self.update_view_selected_button()
+        self.all_photos_view.sync_selection(image_path, True)
+        self.group_detail_view.sync_selection(image_path, True)
+        self.update_selected_tray()
     
     def remove_from_global_selection(self, image_path: str):
         """Remove an image from global selection."""
+        if image_path not in self.global_selected_images:
+            return
         self.global_selected_images.discard(image_path)
-        self.update_view_selected_button()
+        self.all_photos_view.sync_selection(image_path, False)
+        self.group_detail_view.sync_selection(image_path, False)
+        self.update_selected_tray()
     
-    def on_selection_changed_from_tab(self, image_path: str, is_selected: bool):
-        """Handle selection changes from any tab view."""
+    def on_selection_changed_from_view(self, image_path: str, is_selected: bool):
+        """Handle selection changes from any view."""
         # Update global selection state
         if is_selected:
             self.add_to_global_selection(image_path)
         else:
             self.remove_from_global_selection(image_path)
-        
-        # Sync selection across all tabs
-        if self.tab_widget.currentWidget() != self.all_photos_view:
-            self.all_photos_view.sync_selection(image_path, is_selected)
-        if self.tab_widget.currentWidget() != self.selected_photos_view:
-            self.selected_photos_view.sync_selection(image_path, is_selected)
-        if self.tab_widget.currentWidget() != self.grouped_photos_view:
-            self.grouped_photos_view.sync_selection(image_path, is_selected)
-    
-    def on_tab_changed(self, index: int):
-        """Handle tab changes."""
-        # Update selected photos view when switching to it
-        if index == 2:  # Selected photos tab
-            self.selected_photos_view.update_selected_images()
-        # Update tab count
-        count = len(self.global_selected_images)
-        self.tab_widget.setTabText(2, f"⭐ Selected ({count})")
+        self.grouped_photos_view.sync_selected_counts(self.global_selected_images)
     
     def start_deduplication_session(self):
         """Start a new deduplication session."""

@@ -8,6 +8,7 @@ which can be used with ONNX Runtime for efficient inference.
 
 import os
 
+import onnx
 import torch
 import torch.nn as nn
 from torchvision import models
@@ -34,11 +35,14 @@ def _validate_onnx_model(output_path: str) -> None:
         import onnxruntime as ort
 
         print("\nTesting ONNX Runtime inference...")
-        session = ort.InferenceSession(output_path)
+        sess_options = ort.SessionOptions()
+        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        session = ort.InferenceSession(output_path, sess_options)
 
         # Run inference with dummy data
         dummy_input_np = np.random.randn(1, 3, 224, 224).astype(np.float32)
-        outputs = session.run(None, {"input": dummy_input_np})
+        input_name = session.get_inputs()[0].name
+        outputs = session.run(None, {input_name: dummy_input_np})
 
         print("✅ ONNX Runtime inference successful")
         print(f"  Output shape: {outputs[0].shape}")
@@ -46,6 +50,8 @@ def _validate_onnx_model(output_path: str) -> None:
     except ImportError:
         print("\n⚠️  onnxruntime not installed, skipping inference test")
         print("   Install with: pip install onnxruntime")
+    except Exception as e:
+        print(f"\n❌ ONNX Runtime inference failed: {e}")
 
 
 def _export_model(model: nn.Module, output_path: str) -> None:
@@ -60,10 +66,13 @@ def _export_model(model: nn.Module, output_path: str) -> None:
     dummy_input = torch.randn(1, 3, 224, 224)
 
     print(f"Exporting model to {output_path}...")
+
+    # Export to a temporary path first
+    temp_path = output_path + ".temp"
     torch.onnx.export(
         model,
         dummy_input,
-        output_path,
+        temp_path,
         export_params=True,
         opset_version=OPSET_VERSION,
         do_constant_folding=True,
@@ -74,6 +83,20 @@ def _export_model(model: nn.Module, output_path: str) -> None:
             "output": {0: "batch_size"},
         },
     )
+
+    # Convert to embedded format (no external data files)
+    # This ensures compatibility with ONNX Runtime when loading models
+    import onnx
+    print("Converting to embedded format...")
+    model_onnx = onnx.load(temp_path, load_external_data=True)
+    onnx.save_model(model_onnx, output_path, save_as_external_data=False)
+
+    # Clean up temp file and any external data files
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
+    temp_data_path = temp_path + ".data"
+    if os.path.exists(temp_data_path):
+        os.remove(temp_data_path)
 
     print(f"✅ Model exported successfully to {output_path}")
     _validate_onnx_model(output_path)

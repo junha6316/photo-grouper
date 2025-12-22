@@ -111,6 +111,11 @@ class AllPhotosView(QWidget):
         """Sync selection state from other views."""
         if self.grid_view:
             self.grid_view.set_image_selected(image_path, is_selected)
+
+    def clear_selection(self):
+        """Clear selection state for all images."""
+        if self.grid_view:
+            self.grid_view.set_all_selected(False)
     
     def clear(self):
         """Clear all images."""

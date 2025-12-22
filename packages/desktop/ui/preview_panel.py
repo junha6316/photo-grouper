@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+    QWidget, QVBoxLayout, QLabel,
     QScrollArea, QFrame
 )
 from PySide6.QtCore import Qt, Signal, QTimer
@@ -9,7 +9,6 @@ import os
 
 from ui.utils.async_image_loader import get_async_loader, ImageLoadResult
 from ui.utils.image_preloader import ViewportImagePreloader
-from ui.components.layouts import FlowLayout
 
 class PreviewThumbnailWidget(QLabel):
     """Widget to display a single thumbnail image with async loading in preview panel."""
@@ -118,13 +117,24 @@ class PreviewThumbnailWidget(QLabel):
 class GroupWidget(QFrame):
     """Widget to display a group of similar images."""
     
-    def __init__(self, group_images: List[str], group_number: int, is_singles_group: bool = False, similarity: float = None):
+    def __init__(
+        self,
+        group_images: List[str],
+        group_number: int,
+        is_singles_group: bool = False,
+        similarity: float = None,
+        open_group_callback=None,
+    ):
         super().__init__()
         self.group_images = group_images
         self.group_number = group_number
         self.is_singles_group = is_singles_group
         self.similarity = similarity
         self.thumbnails = []  # Keep track of thumbnail widgets
+        self.open_group_callback = open_group_callback
+        self.selected_count = 0
+        self.group_image_set = set(group_images)
+        self.meta_label = None
         
         # Make the widget clickable
         self.setCursor(Qt.PointingHandCursor)
@@ -150,70 +160,66 @@ class GroupWidget(QFrame):
     def init_ui(self):
         """Initialize the group UI."""
         layout = QVBoxLayout(self)
-        layout.setSpacing(5)
-        layout.setContentsMargins(8, 8, 8, 8)
-        
+        layout.setSpacing(8)  # Increased from 6 to 8
+        layout.setContentsMargins(12, 12, 12, 12)  # Increased from 8 to 12
+
         # Group header - more compact
         header_font = QFont()
         header_font.setBold(True)
         header_font.setPointSize(11)
-        
-        # Header with selection controls
-        header_layout = QHBoxLayout()
-        
+
+        # Header with group info
+        header_layout = QVBoxLayout()
+        header_layout.setSpacing(2)
+
         if self.is_singles_group:
-            header_text = f"Single Images ({len(self.group_images)} images)"
+            header_text = "Single Images"
             header_color = "#666"
             header_style = "font-style: italic;"
         else:
-            # Include similarity score if available
-            if self.similarity is not None and self.similarity > 0:
-                header_text = f"Group {self.group_number} (Similarity: {self.similarity:.2f}) - {len(self.group_images)} images"
-            else:
-                header_text = f"Group {self.group_number} ({len(self.group_images)} images)"
+            header_text = f"Group {self.group_number}"
             header_color = "#333"
             header_style = ""
-        
+
         header = QLabel(header_text)
         header.setFont(header_font)
         header.setStyleSheet(f"color: {header_color}; padding: 2px; {header_style}")
         header_layout.addWidget(header)
-        
+
+        self.meta_label = QLabel("")
+        self.meta_label.setStyleSheet("color: #666; font-size: 10px;")
+        self.meta_label.setWordWrap(True)
+        header_layout.addWidget(self.meta_label)
+        self._update_meta_label()
+
         layout.addLayout(header_layout)
-        
-        # Thumbnails using responsive flow layout
-        thumbnails_widget = QWidget()
-        flow_layout = FlowLayout(thumbnails_widget)
-        flow_layout.setSpacing(5)
-        flow_layout.setContentsMargins(5, 5, 5, 5)
-        
-        # Create compact thumbnails
-        display_count = min(8, len(self.group_images))  # Show max 8 thumbnails
-        for image_path in self.group_images[:display_count]:
-            thumbnail = PreviewThumbnailWidget(image_path, size=150, parent_group_widget=self)  # Match grid view size
+
+        # Representative thumbnail - increased from 150 to 180 for better visibility
+        if self.group_images:
+            thumbnail = PreviewThumbnailWidget(self.group_images[0], size=180, parent_group_widget=self)
             self.thumbnails.append(thumbnail)
-            flow_layout.addWidget(thumbnail)
-        
-        # Show count if there are more images
-        if len(self.group_images) > display_count:
-            more_card = QLabel(f"+ {len(self.group_images) - display_count} more")
-            more_card.setFixedSize(150, 150)  # Same size as thumbnails
-            more_card.setAlignment(Qt.AlignCenter)
-            # more_card.setCursor(Qt.PointingHandCursor)
-            more_card.setStyleSheet("""
-                QLabel {
-                    color: #666; 
-                    font-weight: bold;
-                    font-size: 12px;
-                    border: 2px dashed #ccc;
-                    border-radius: 5px;
-                    background-color: #f9f9f9;
-                }
-               
-            """)
-            flow_layout.addWidget(more_card)
-        
-        layout.addWidget(thumbnails_widget)
+            layout.addWidget(thumbnail, 0, Qt.AlignCenter)
+
+        if self.is_singles_group or len(self.group_images) == 1:
+            footer_label = QLabel("Single Image Group")
+            footer_label.setStyleSheet("color: #777; font-size: 11px; font-style: italic;")
+            layout.addWidget(footer_label)
+
+    def _update_meta_label(self):
+        count_text = f"{len(self.group_images)} image"
+        if len(self.group_images) != 1:
+            count_text += "s"
+        meta_parts = [count_text, f"{self.selected_count} selected"]
+        if self.similarity is not None and self.similarity > 0 and not self.is_singles_group:
+            meta_parts.append(f"Similarity {self.similarity:.2f}")
+        if self.meta_label:
+            self.meta_label.setText(" | ".join(meta_parts))
+
+    def set_selected_count(self, count: int):
+        if self.selected_count == count:
+            return
+        self.selected_count = count
+        self._update_meta_label()
     
     
     def mousePressEvent(self, event):
@@ -225,6 +231,11 @@ class GroupWidget(QFrame):
     
     def show_cluster_details(self):
         """Show detailed view of this cluster."""
+        if self.open_group_callback:
+            self.open_group_callback(
+                self.group_images, self.group_number, self.is_singles_group, self.similarity
+            )
+            return
         try:
             from ui.cluster_dialog import ClusterDialog
             # Find the main window by traversing up the parent hierarchy
@@ -256,6 +267,8 @@ class GroupWidget(QFrame):
 
 class PreviewPanel(QWidget):
     """Main panel to display all photo groups."""
+
+    group_clicked = Signal(list, int, bool, object)
     
     def __init__(self):
         super().__init__()
@@ -314,15 +327,29 @@ class PreviewPanel(QWidget):
             self.layout.addWidget(no_groups_label)
             return
         
-        singles_group = groups[0]
-        sorted_groups = [singles_group] + sorted(groups[1:], key=len, reverse=True)
+        group_entries = []
+        for idx, group in enumerate(groups):
+            similarity = None
+            if similarities and idx < len(similarities):
+                similarity = similarities[idx]
+            is_singles_group = similarity == 0.0 if similarity is not None else False
+            group_entries.append(
+                {
+                    "group": group,
+                    "similarity": similarity,
+                    "is_singles": is_singles_group,
+                }
+            )
 
-        # Separate multi-image groups from potential singles groups
+        non_singles = [entry for entry in group_entries if not entry["is_singles"]]
+        singles = [entry for entry in group_entries if entry["is_singles"]]
+        non_singles.sort(key=lambda entry: len(entry["group"]), reverse=True)
+        sorted_entries = non_singles + singles
+
         groups_to_show = []
-        
-        for group in sorted_groups:
-            if len(group) >= min_display_size:
-                groups_to_show.append(group)
+        for entry in sorted_entries:
+            if len(entry["group"]) >= min_display_size:
+                groups_to_show.append(entry)
         
         if not groups_to_show:
             print("DEBUG: No groups to show!")
@@ -336,18 +363,21 @@ class PreviewPanel(QWidget):
         self.group_widgets = []
         
         # Add each group
-        for i, group in enumerate(groups_to_show):
-            # Check if this is the singles group (it's the last one and smaller than min_display_size)
+        for i, entry in enumerate(groups_to_show):
+            group = entry["group"]
+            similarity = entry["similarity"]
+            is_singles_group = entry["is_singles"]
+            display_number = i + 1
             
-            # Get similarity score for this group
-            similarity = None
-            if similarities:
-                # Find the original index of this group to get its similarity
-                original_idx = groups.index(group)
-                if original_idx < len(similarities):
-                    similarity = similarities[original_idx]
-            
-            group_widget = GroupWidget(group, i, is_singles_group=i == 0, similarity=similarity)
+            group_widget = GroupWidget(
+                group,
+                display_number,
+                is_singles_group=is_singles_group,
+                similarity=similarity,
+                open_group_callback=lambda g=group, idx=display_number, singles=is_singles_group, sim=similarity: self.group_clicked.emit(
+                    g, idx, singles, sim
+                ),
+            )
             self.group_widgets.append(group_widget)
             self.layout.addWidget(group_widget)
         
@@ -357,6 +387,15 @@ class PreviewPanel(QWidget):
         # Start viewport monitoring
         self.viewport_timer.start(500)  # Check every 500ms
         self._check_viewport()  # Initial check
+
+    def update_selected_counts(self, selected_images):
+        """Update selected counts for each group widget."""
+        if not self.group_widgets:
+            return
+        selected_set = set(selected_images)
+        for group_widget in self.group_widgets:
+            count = len(group_widget.group_image_set.intersection(selected_set))
+            group_widget.set_selected_count(count)
 
     def clear(self):
         """Clear all widgets from the panel."""
