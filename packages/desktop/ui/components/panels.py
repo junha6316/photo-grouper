@@ -13,18 +13,32 @@ from .image_widgets import SelectedThumbnail
 class SelectedImagesPanel(QWidget):
     """Panel showing selected images as thumbnails on the right side."""
     
-    def __init__(self, parent=None, show_header: bool = True):
+    def __init__(
+        self,
+        parent=None,
+        show_header: bool = True,
+        thumbnail_size: int = 120,
+        show_filenames: bool = True,
+        compact: bool = False,
+    ):
         super().__init__(parent)
         self.selected_images = set()
         self.thumbnail_widgets = {}
         self.show_header = show_header
+        self.thumbnail_size = thumbnail_size
+        self.show_filenames = show_filenames
+        self.compact = compact
         self.init_ui()
     
     def init_ui(self):
         """Initialize the selected images panel UI."""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(10)
+        if self.compact:
+            layout.setContentsMargins(8, 8, 8, 8)
+            layout.setSpacing(8)
+        else:
+            layout.setContentsMargins(10, 10, 10, 10)
+            layout.setSpacing(10)
         
         # Header
         header_label = QLabel("Selected Images")
@@ -57,8 +71,13 @@ class SelectedImagesPanel(QWidget):
         # Container widget for thumbnails
         self.container_widget = QWidget()
         self.container_layout = QVBoxLayout(self.container_widget)
-        self.container_layout.setContentsMargins(5, 5, 5, 5)
-        self.container_layout.setSpacing(8)
+        if self.compact:
+            self.container_layout.setContentsMargins(4, 4, 4, 4)
+            self.container_layout.setSpacing(4)
+            self.container_layout.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
+        else:
+            self.container_layout.setContentsMargins(5, 5, 5, 5)
+            self.container_layout.setSpacing(8)
         self.container_layout.addStretch()  # Push thumbnails to top
         
         self.scroll_area.setWidget(self.container_widget)
@@ -72,7 +91,12 @@ class SelectedImagesPanel(QWidget):
         self.selected_images.add(image_path)
         
         # Create thumbnail widget
-        thumbnail = SelectedThumbnail(image_path, size=120)
+        thumbnail = SelectedThumbnail(
+            image_path,
+            size=self.thumbnail_size,
+            show_filename=self.show_filenames,
+            compact=self.compact,
+        )
         
         # Connect to the removal handler if available, otherwise use local removal
         if hasattr(self, '_connect_removal_handler'):

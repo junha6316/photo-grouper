@@ -255,6 +255,17 @@ class MainWindow(QMainWindow):
         
         # Processing thread
         self.processing_thread = None
+
+        # Splitter sizing state
+        self._splitter_initialized = False
+        self._splitter_adjusting = False
+        self._selected_tray_visible = False
+        self._left_panel_ratio = 0.24
+        self._right_panel_ratio = 0.16
+        self._left_panel_min = 240
+        self._left_panel_max = 360
+        self._right_panel_min = 200
+        self._right_panel_max = 240
         
         self.init_ui()
         
@@ -459,11 +470,12 @@ class MainWindow(QMainWindow):
         self.content_splitter.setStretchFactor(0, 1)
         self.content_splitter.setStretchFactor(1, 3)
         self.content_splitter.setStretchFactor(2, 1)
+        self.content_splitter.splitterMoved.connect(self._on_splitter_moved)
 
-        self.grouped_photos_view.setMinimumWidth(300)
-        self.selected_tray.setMinimumWidth(260)
+        self.grouped_photos_view.setMinimumWidth(self._left_panel_min)
+        self.selected_tray.setMinimumWidth(self._right_panel_min)
         # Initial layout: 25% left panel, 75% center (selected tray hidden initially)
-        self.content_splitter.setSizes([360, 900, 0])
+        self._apply_splitter_sizes()
 
         layout.addWidget(self.content_splitter, 1)
 
@@ -475,9 +487,17 @@ class MainWindow(QMainWindow):
 
     def showEvent(self, event):
         super().showEvent(event)
+        if not self._splitter_initialized:
+            self._splitter_initialized = True
+            self._apply_splitter_sizes()
         if not self._startup_prompt_shown:
             self._startup_prompt_shown = True
             QTimer.singleShot(0, self._show_startup_dialog)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._splitter_initialized:
+            self._apply_splitter_sizes()
 
     def _show_startup_dialog(self):
         dialog = StartupDialog(self, hide_out_of_focus=self.hide_out_of_focus_checkbox.isChecked())
@@ -778,25 +798,65 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'current_embeddings') and self.current_embeddings:
             threshold = self.threshold_slider.value() / 100.0
             self.regroup_with_threshold(threshold)
-    
+
+    def _on_splitter_moved(self, pos: int, index: int):
+        if self._splitter_adjusting:
+            return
+        sizes = self.content_splitter.sizes()
+        total_width = sum(sizes)
+        if total_width <= 0:
+            return
+        self._left_panel_ratio = sizes[0] / total_width
+        if sizes[2] > 0:
+            self._right_panel_ratio = sizes[2] / total_width
+
+    def _get_splitter_total_width(self) -> int:
+        sizes = self.content_splitter.sizes()
+        total_width = sum(sizes)
+        if total_width <= 0:
+            total_width = self.content_splitter.width()
+        if total_width <= 0:
+            total_width = self.width()
+        return total_width
+
+    def _apply_splitter_sizes(self):
+        if not hasattr(self, "content_splitter"):
+            return
+        total_width = self._get_splitter_total_width()
+        if total_width <= 0:
+            return
+
+        has_tray = self._selected_tray_visible
+        left_width = int(total_width * self._left_panel_ratio)
+        left_width = max(self._left_panel_min, min(self._left_panel_max, left_width))
+
+        right_width = 0
+        if has_tray:
+            right_width = int(total_width * self._right_panel_ratio)
+            right_width = max(self._right_panel_min, min(self._right_panel_max, right_width))
+
+        if left_width + right_width > total_width:
+            left_width = max(self._left_panel_min, total_width - right_width)
+            if left_width + right_width > total_width:
+                right_width = max(0, total_width - left_width)
+
+        center_width = max(0, total_width - left_width - right_width)
+
+        self._splitter_adjusting = True
+        try:
+            self.content_splitter.setSizes([left_width, center_width, right_width])
+        finally:
+            self._splitter_adjusting = False
+
     def _update_selected_tray_visibility(self):
         """Show or hide the selected tray based on whether images are selected."""
         has_selections = len(self.global_selected_images) > 0
+        if has_selections == self._selected_tray_visible:
+            self._apply_splitter_sizes()
+            return
 
-        # Get current splitter sizes
-        sizes = self.content_splitter.sizes()
-
-        if has_selections and sizes[2] == 0:
-            # Show the selected tray by giving it space
-            total_width = sum(sizes)
-            # Give 20% to selected tray, adjust center panel
-            new_tray_width = int(total_width * 0.2)
-            new_center_width = sizes[1] - new_tray_width
-            self.content_splitter.setSizes([sizes[0], new_center_width, new_tray_width])
-        elif not has_selections and sizes[2] > 0:
-            # Hide the selected tray by collapsing it
-            # Give its space back to center panel
-            self.content_splitter.setSizes([sizes[0], sizes[1] + sizes[2], 0])
+        self._selected_tray_visible = has_selections
+        self._apply_splitter_sizes()
 
     def _calculate_displayed_group_count(self, groups: list, min_display_size: int) -> int:
         """

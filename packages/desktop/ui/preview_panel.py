@@ -13,7 +13,7 @@ from ui.utils.image_preloader import ViewportImagePreloader
 class PreviewThumbnailWidget(QLabel):
     """Widget to display a single thumbnail image with async loading in preview panel."""
     
-    def __init__(self, image_path: str, size: int = 150, parent_group_widget=None):
+    def __init__(self, image_path: str, size: int = 140, parent_group_widget=None):
         super().__init__()
         self.image_path = image_path
         self.thumbnail_size = size
@@ -146,7 +146,7 @@ class GroupWidget(QFrame):
             QFrame#GroupWidget {
                 border: 1px solid #ccc;
                 border-radius: 6px;
-                margin: 3px;
+                margin: 1px;
                 background-color: white;
             }
             QFrame#GroupWidget:hover {
@@ -160,17 +160,17 @@ class GroupWidget(QFrame):
     def init_ui(self):
         """Initialize the group UI."""
         layout = QVBoxLayout(self)
-        layout.setSpacing(8)  # Increased from 6 to 8
-        layout.setContentsMargins(12, 12, 12, 12)  # Increased from 8 to 12
+        layout.setSpacing(4)
+        layout.setContentsMargins(6, 6, 6, 6)
 
         # Group header - more compact
         header_font = QFont()
         header_font.setBold(True)
-        header_font.setPointSize(11)
+        header_font.setPointSize(10)
 
         # Header with group info
         header_layout = QVBoxLayout()
-        header_layout.setSpacing(2)
+        header_layout.setSpacing(1)
 
         if self.is_singles_group:
             header_text = "Single Images"
@@ -183,26 +183,26 @@ class GroupWidget(QFrame):
 
         header = QLabel(header_text)
         header.setFont(header_font)
-        header.setStyleSheet(f"color: {header_color}; padding: 2px; {header_style}")
+        header.setStyleSheet(f"color: {header_color}; padding: 0px; {header_style}")
         header_layout.addWidget(header)
 
         self.meta_label = QLabel("")
-        self.meta_label.setStyleSheet("color: #666; font-size: 10px;")
+        self.meta_label.setStyleSheet("color: #666; font-size: 9px;")
         self.meta_label.setWordWrap(True)
         header_layout.addWidget(self.meta_label)
         self._update_meta_label()
 
         layout.addLayout(header_layout)
 
-        # Representative thumbnail - increased from 150 to 180 for better visibility
+        # Representative thumbnail
         if self.group_images:
-            thumbnail = PreviewThumbnailWidget(self.group_images[0], size=180, parent_group_widget=self)
+            thumbnail = PreviewThumbnailWidget(self.group_images[0], size=140, parent_group_widget=self)
             self.thumbnails.append(thumbnail)
             layout.addWidget(thumbnail, 0, Qt.AlignCenter)
 
         if self.is_singles_group or len(self.group_images) == 1:
             footer_label = QLabel("Single Image Group")
-            footer_label.setStyleSheet("color: #777; font-size: 11px; font-style: italic;")
+            footer_label.setStyleSheet("color: #777; font-size: 9px; font-style: italic;")
             layout.addWidget(footer_label)
 
     def _update_meta_label(self):
@@ -273,7 +273,7 @@ class PreviewPanel(QWidget):
     def __init__(self):
         super().__init__()
         self.group_widgets = []
-        self.preloader = ViewportImagePreloader(thumbnail_size=150)
+        self.preloader = ViewportImagePreloader(thumbnail_size=140)
         self.viewport_timer = QTimer()
         self.viewport_timer.timeout.connect(self._check_viewport)
         self.init_ui()
@@ -288,6 +288,8 @@ class PreviewPanel(QWidget):
         # Content widget for scroll area
         self.content_widget = QWidget()
         self.layout = QVBoxLayout(self.content_widget)
+        self.layout.setContentsMargins(6, 6, 6, 6)
+        self.layout.setSpacing(6)
         
         # Default message
         self.default_label = QLabel("Select a folder to start grouping photos")

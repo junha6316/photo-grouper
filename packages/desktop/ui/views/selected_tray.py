@@ -27,14 +27,14 @@ class SelectedTray(QWidget):
 
     def init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(10)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
 
         # Header
         header_layout = QHBoxLayout()
         title_font = QFont()
         title_font.setBold(True)
-        title_font.setPointSize(12)
+        title_font.setPointSize(11)
 
         title_label = QLabel("Selected")
         title_label.setFont(title_font)
@@ -44,19 +44,19 @@ class SelectedTray(QWidget):
         header_layout.addStretch()
 
         self.count_label = QLabel("0 selected")
-        self.count_label.setStyleSheet("color: #666; font-size: 12px;")
+        self.count_label.setStyleSheet("color: #666; font-size: 11px;")
         header_layout.addWidget(self.count_label)
 
         layout.addLayout(header_layout)
 
         # Action buttons
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(6)
+        button_layout.setSpacing(5)
 
         button_style = """
             QPushButton {
-                padding: 5px 8px;
-                font-size: 11px;
+                padding: 4px 7px;
+                font-size: 10px;
                 border: 1px solid #ccc;
                 border-radius: 4px;
                 background-color: #f8f8f8;
@@ -86,8 +86,8 @@ class SelectedTray(QWidget):
 
         primary_style = """
             QPushButton {
-                padding: 5px 10px;
-                font-size: 11px;
+                padding: 4px 9px;
+                font-size: 10px;
                 border: 1px solid #007acc;
                 border-radius: 4px;
                 background-color: #007acc;
@@ -129,7 +129,13 @@ class SelectedTray(QWidget):
         layout.addLayout(button_layout)
 
         # Selected thumbnails list
-        self.selected_panel = SelectedImagesPanel(self, show_header=False)
+        self.selected_panel = SelectedImagesPanel(
+            self,
+            show_header=False,
+            thumbnail_size=88,
+            show_filenames=False,
+            compact=True,
+        )
         self.selected_panel._connect_removal_handler = self._on_remove_clicked
         layout.addWidget(self.selected_panel, 1)
 

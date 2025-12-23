@@ -550,10 +550,18 @@ class SelectedThumbnail(QWidget):
     
     remove_clicked = Signal(str)  # image_path
     
-    def __init__(self, image_path: str, size: int = 80):
+    def __init__(
+        self,
+        image_path: str,
+        size: int = 80,
+        show_filename: bool = True,
+        compact: bool = False,
+    ):
         super().__init__()
         self.image_path = image_path
         self.thumbnail_size = size
+        self.show_filename = show_filename
+        self.compact = compact
         self.loader_connection = None  # Track the signal connection
         self.has_loaded = False
         self.load_timer = None
@@ -562,13 +570,20 @@ class SelectedThumbnail(QWidget):
     def init_ui(self):
         """Initialize the thumbnail UI."""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(3)
+        if self.compact:
+            layout.setContentsMargins(4, 4, 4, 4)
+            layout.setSpacing(2)
+        else:
+            layout.setContentsMargins(5, 5, 5, 5)
+            layout.setSpacing(3)
         
         # Container for image and remove button
         image_container = QWidget()
-        image_container.setFixedSize(self.thumbnail_size + 10, 
-                                   self.thumbnail_size + 10)
+        container_padding = 6 if self.compact else 10
+        image_container.setFixedSize(
+            self.thumbnail_size + container_padding,
+            self.thumbnail_size + container_padding,
+        )
         image_layout = QVBoxLayout(image_container)
         image_layout.setContentsMargins(0, 0, 0, 0)
         
@@ -576,31 +591,35 @@ class SelectedThumbnail(QWidget):
         self.image_widget = QLabel()
         self.image_widget.setFixedSize(self.thumbnail_size, self.thumbnail_size)
         self.image_widget.setAlignment(Qt.AlignCenter)
-        self.image_widget.setStyleSheet("""
-            QLabel {
+        padding = 1 if self.compact else 2
+        border_radius = 3 if self.compact else 4
+        self.image_widget.setStyleSheet(f"""
+            QLabel {{
                 border: 1px solid #ddd;
-                border-radius: 4px;
+                border-radius: {border_radius}px;
                 background-color: #fafafa;
-                padding: 2px;
-            }
+                padding: {padding}px;
+            }}
         """)
         image_layout.addWidget(self.image_widget)
         
         # Remove button overlay
         self.remove_button = QPushButton("×")
-        self.remove_button.setFixedSize(20, 20)
-        self.remove_button.setStyleSheet("""
-            QPushButton {
+        button_size = 16 if self.compact else 20
+        font_size = 10 if self.compact else 12
+        self.remove_button.setFixedSize(button_size, button_size)
+        self.remove_button.setStyleSheet(f"""
+            QPushButton {{
                 background-color: #ff4444;
                 color: white;
                 border: none;
-                border-radius: 10px;
-                font-size: 12px;
+                border-radius: {button_size // 2}px;
+                font-size: {font_size}px;
                 font-weight: bold;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 background-color: #cc0000;
-            }
+            }}
         """)
         self.remove_button.clicked.connect(
             lambda: self.remove_clicked.emit(self.image_path)
@@ -608,21 +627,27 @@ class SelectedThumbnail(QWidget):
         
         # Position remove button in top-right corner
         self.remove_button.setParent(image_container)
-        self.remove_button.move(self.thumbnail_size - 12, 2)
+        offset_x = max(0, self.thumbnail_size - button_size + 2)
+        self.remove_button.move(offset_x, 2)
         self.remove_button.raise_()
         
         layout.addWidget(image_container)
         
         # Filename label
         filename = os.path.basename(self.image_path)
-        if len(filename) > 12:
-            filename = filename[:9] + "..."
-        
-        filename_label = QLabel(filename)
-        filename_label.setAlignment(Qt.AlignCenter)
-        filename_label.setStyleSheet("font-size: 10px; color: #666;")
-        filename_label.setToolTip(os.path.basename(self.image_path))
-        layout.addWidget(filename_label)
+        if self.show_filename:
+            display_name = filename
+            if len(display_name) > 12:
+                display_name = display_name[:9] + "..."
+            label_size = 9 if self.compact else 10
+            filename_label = QLabel(display_name)
+            filename_label.setAlignment(Qt.AlignCenter)
+            filename_label.setStyleSheet(f"font-size: {label_size}px; color: #666;")
+            filename_label.setToolTip(filename)
+            layout.addWidget(filename_label)
+        else:
+            self.setToolTip(filename)
+            self.image_widget.setToolTip(filename)
         
         # Defer thumbnail loading
         self.defer_load_thumbnail()
