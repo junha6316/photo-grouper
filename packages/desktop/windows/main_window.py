@@ -16,6 +16,7 @@ from core.grouper import PhotoGrouper
 from ui.views import AllPhotosView, GroupedPhotosView, GroupDetailView, SelectedTray
 
 DEFAULT_FOCUS_THRESHOLD = 100
+DEFAULT_EXTREME_SIMILARITY_THRESHOLD = 0.98
 
 
 class ElidedLabel(QLabel):
@@ -249,6 +250,8 @@ class MainWindow(QMainWindow):
         self.all_image_paths = []  # Store all scanned images
         self.focus_scores = {}
         self.out_of_focus_images = []
+        self.exclude_extremely_similar = False
+        self.extremely_similar_threshold = DEFAULT_EXTREME_SIMILARITY_THRESHOLD
         
         # Global selection state - tracks selected images across all clusters
         self.global_selected_images = set()
@@ -434,6 +437,28 @@ class MainWindow(QMainWindow):
         self.view_combo.currentIndexChanged.connect(self.on_view_combo_changed)
         view_layout.addWidget(self.view_combo)
 
+        self.selection_mode_button = QPushButton("Selection Mode (Group)")
+        self.selection_mode_button.setEnabled(False)
+        self.selection_mode_button.clicked.connect(self.open_selection_mode)
+        self.selection_mode_button.setToolTip("Select a group to enable selection mode")
+        self.selection_mode_button.setStyleSheet("""
+            QPushButton {
+                padding: 4px 10px;
+                font-size: 11px;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                background-color: #f8f8f8;
+            }
+            QPushButton:hover:enabled {
+                background-color: #e8e8e8;
+            }
+            QPushButton:disabled {
+                color: #999;
+                background-color: #f5f5f5;
+            }
+        """)
+        view_layout.addWidget(self.selection_mode_button)
+
         view_layout.addStretch()
         layout.addLayout(view_layout)
 
@@ -450,6 +475,7 @@ class MainWindow(QMainWindow):
 
         # Connect group click to detail view
         self.grouped_photos_view.group_clicked.connect(self.on_group_clicked)
+        self.grouped_photos_view.exclude_similar_toggled.connect(self.on_exclude_similar_toggled)
 
         # Selected tray actions
         self.selected_tray.clear_requested.connect(self.clear_global_selection)
@@ -528,6 +554,7 @@ class MainWindow(QMainWindow):
         self.grouped_photos_view.set_summary_text("")
         self.grouped_photos_view.sync_selected_counts(self.global_selected_images)
         self._update_selected_tray_visibility()
+        self._update_selection_mode_enabled()
         
         # Show progress
         self.progress_bar.setVisible(True)
@@ -566,6 +593,7 @@ class MainWindow(QMainWindow):
         # Immediately populate the All Photos view
         self.all_photos_view.set_images(image_paths, hidden_count)
         self.set_view_mode("all")
+        self._update_selection_mode_enabled()
 
         # Keep grouped view showing processing with initial status
         focus_note = ""
@@ -605,24 +633,13 @@ class MainWindow(QMainWindow):
         self.all_image_paths.sort()
         
         if groups:
-            min_display_size = self.min_group_spinbox.value()
-            
             # Update all views (All photos already set in on_images_scanned)
             # Just update the grouped view with the final groups
-            self.grouped_photos_view.set_groups(groups, min_display_size, similarities)
-            self.group_detail_view.clear()
             self.selected_tray.sync_selected_images(self.global_selected_images)
             self._update_selected_tray_visibility()
             
-            total_images = sum(len(g) for g in groups)
-            
-            # Calculate actual displayed group count (accounting for singles consolidation)
-            displayed_count = self._calculate_displayed_group_count(groups, min_display_size)
-            summary_text = f"Found {displayed_count} groups with {total_images} total images"
-            if hidden_count:
-                summary_text += f" | Hidden {hidden_count} out-of-focus"
-            self.grouped_photos_view.set_summary_text(summary_text)
-            self.grouped_photos_view.sync_selected_counts(self.global_selected_images)
+            self._refresh_grouped_display()
+            self._update_selection_mode_enabled()
             
             # Enable deduplication button if we have groups suitable for deduplication
             dedup_groups = [g for g in groups if len(g) > 1]
@@ -663,6 +680,7 @@ class MainWindow(QMainWindow):
                     status_text = f"{status_text} | {hidden_count} hidden out-of-focus"
                 self.status_label.setText(status_text)
             self.grouped_photos_view.sync_selected_counts(self.global_selected_images)
+            self._update_selection_mode_enabled()
     
     def apply_preset(self, threshold: float):
         """Apply a preset threshold value."""
@@ -760,23 +778,14 @@ class MainWindow(QMainWindow):
             
             self.current_groups = sorted_groups
             self.current_similarities = sorted_similarities
-            min_display_size = self.min_group_spinbox.value()
             
             # Update grouped photos view
-            self.grouped_photos_view.set_groups(sorted_groups, min_display_size, sorted_similarities)
-            self.group_detail_view.clear()
+            self._refresh_grouped_display()
             
             # Update deduplication button availability
             dedup_groups = [g for g in sorted_groups if len(g) > 1]
             # self.dedup_button.setEnabled(len(dedup_groups) > 0)
             
-            # Calculate actual displayed group count (accounting for singles consolidation)
-            displayed_count = self._calculate_displayed_group_count(sorted_groups, min_display_size)
-            total_images = sum(len(g) for g in sorted_groups)
-            summary_text = f"Found {displayed_count} groups with {total_images} total images"
-            self.grouped_photos_view.set_summary_text(summary_text)
-            self.grouped_photos_view.sync_selected_counts(self.global_selected_images)
-
             status_parts = [f"Regrouped at {threshold:.2f}"]
             if dedup_groups:
                 status_parts.append(f"{len(dedup_groups)} groups ready for deduplication")
@@ -878,6 +887,140 @@ class MainWindow(QMainWindow):
             
         return displayed_count
 
+    def on_exclude_similar_toggled(self, enabled: bool):
+        """Handle excluding extremely similar images from the group list."""
+        self.exclude_extremely_similar = enabled
+        self._refresh_grouped_display(preserve_detail=True)
+
+    def _filter_group_extremely_similar(self, group: List[str]) -> List[str]:
+        if len(group) <= 1 or not self.current_embeddings:
+            return group
+        kept = []
+        for image_path in group:
+            embedding = self.current_embeddings.get(image_path)
+            if embedding is None:
+                kept.append(image_path)
+                continue
+            is_duplicate = False
+            for kept_path in kept:
+                kept_embedding = self.current_embeddings.get(kept_path)
+                if kept_embedding is None:
+                    continue
+                similarity = float(np.dot(embedding, kept_embedding))
+                if similarity >= self.extremely_similar_threshold:
+                    is_duplicate = True
+                    break
+            if not is_duplicate:
+                kept.append(image_path)
+        if not kept and group:
+            kept = [group[0]]
+        return kept
+
+    def _get_display_groups(
+        self,
+        groups: List[List[str]],
+        similarities: List[float],
+    ) -> tuple[list, list]:
+        if not self.exclude_extremely_similar:
+            return groups, similarities
+        filtered_groups = [
+            self._filter_group_extremely_similar(group) for group in groups
+        ]
+        return filtered_groups, similarities
+
+    def _refresh_grouped_display(self, preserve_detail: bool = False):
+        if not self.current_groups:
+            self.grouped_photos_view.clear()
+            if not preserve_detail:
+                self.group_detail_view.clear()
+            return
+        min_display_size = self.min_group_spinbox.value()
+
+        ordered_entries = []
+        for idx, group in enumerate(self.current_groups):
+            similarity = None
+            if self.current_similarities and idx < len(self.current_similarities):
+                similarity = self.current_similarities[idx]
+            is_singles = similarity == 0.0 if similarity is not None else False
+            ordered_entries.append(
+                {
+                    "group": group,
+                    "similarity": similarity,
+                    "is_singles": is_singles,
+                }
+            )
+
+        non_singles = [entry for entry in ordered_entries if not entry["is_singles"]]
+        singles = [entry for entry in ordered_entries if entry["is_singles"]]
+        non_singles.sort(key=lambda entry: len(entry["group"]), reverse=True)
+        ordered_entries = non_singles + singles
+
+        visible_entries = [
+            entry for entry in ordered_entries
+            if len(entry["group"]) >= min_display_size
+        ]
+
+        display_groups = []
+        display_similarities = []
+        for entry in visible_entries:
+            group = entry["group"]
+            if self.exclude_extremely_similar:
+                group = self._filter_group_extremely_similar(group)
+            display_groups.append(group)
+            display_similarities.append(entry["similarity"])
+
+        self.grouped_photos_view.set_groups(
+            display_groups,
+            1,
+            display_similarities,
+            preserve_order=True,
+        )
+        if not preserve_detail:
+            self.group_detail_view.clear()
+
+        total_images = sum(len(group) for group in display_groups)
+        displayed_count = len(visible_entries)
+        summary_text = f"Found {displayed_count} groups with {total_images} total images"
+        hidden_count = len(self.out_of_focus_images)
+        if hidden_count:
+            summary_text += f" | Hidden {hidden_count} out-of-focus"
+        if self.exclude_extremely_similar:
+            summary_text += (
+                f" | Excluding >= {self.extremely_similar_threshold:.2f} similar"
+            )
+        self.grouped_photos_view.set_summary_text(summary_text)
+        self.grouped_photos_view.sync_selected_counts(self.global_selected_images)
+        if preserve_detail:
+            self._refresh_open_group_detail()
+        self._update_selection_mode_enabled()
+
+    def _refresh_open_group_detail(self):
+        if not self.group_detail_view.cluster_images:
+            return
+        seed_image = self.group_detail_view.cluster_images[0]
+        source_group = None
+        source_index = None
+        for idx, group in enumerate(self.current_groups):
+            if seed_image in group:
+                source_group = group
+                source_index = idx
+                break
+        if not source_group:
+            return
+        similarity = None
+        if self.current_similarities and source_index is not None:
+            if source_index < len(self.current_similarities):
+                similarity = self.current_similarities[source_index]
+        is_singles = similarity == 0.0 if similarity is not None else False
+        display_group = source_group
+        if self.exclude_extremely_similar:
+            display_group = self._filter_group_extremely_similar(source_group)
+        self.group_detail_view.update_cluster_images(
+            display_group,
+            similarity=similarity,
+            is_singles_group=is_singles,
+        )
+
     def on_view_combo_changed(self, index: int):
         """Handle view selector changes."""
         mode = self.view_combo.itemData(index)
@@ -905,6 +1048,30 @@ class MainWindow(QMainWindow):
         """Open a group in the detail view."""
         self.group_detail_view.set_cluster(images, group_number, is_singles_group, similarity)
         self.set_view_mode("grouped")
+        self._update_selection_mode_enabled()
+
+    def open_selection_mode(self):
+        """Open swipe-based selection mode."""
+        cluster_images = []
+        if hasattr(self.group_detail_view, "cluster_images"):
+            cluster_images = list(self.group_detail_view.cluster_images)
+        if not cluster_images:
+            QMessageBox.information(
+                self,
+                "Select a Group",
+                "Select a group in the list before starting selection mode.",
+            )
+            return
+        from core.review_session import ReviewSession
+        from ui.swipe_review_dialog import SwipeReviewDialog
+        session = ReviewSession(self.current_folder, cluster_images)
+        title = "Selection Mode"
+        if getattr(self.group_detail_view, "is_singles_group", False):
+            title = "Selection Mode - Singles"
+        elif getattr(self.group_detail_view, "cluster_number", 0):
+            title = f"Selection Mode - Group {self.group_detail_view.cluster_number}"
+        dialog = SwipeReviewDialog(session, self, title=title)
+        dialog.exec()
 
     def open_selected_review(self):
         """Open a review dialog for selected images."""
@@ -928,6 +1095,15 @@ class MainWindow(QMainWindow):
         """Update the selected tray with current selections."""
         self.selected_tray.sync_selected_images(self.global_selected_images)
         self._update_selected_tray_visibility()
+
+    def _update_selection_mode_enabled(self):
+        if hasattr(self, "selection_mode_button"):
+            has_group = bool(getattr(self.group_detail_view, "cluster_images", []))
+            self.selection_mode_button.setEnabled(has_group)
+            if has_group:
+                self.selection_mode_button.setToolTip("Open selection mode for this group")
+            else:
+                self.selection_mode_button.setToolTip("Select a group to enable selection mode")
     
     def get_global_selected_images(self):
         """Get the set of globally selected image paths."""

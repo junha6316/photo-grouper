@@ -4,7 +4,15 @@ Grouped photos view component - wrapper for the existing PreviewPanel.
 
 from typing import List, Dict
 import numpy as np
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QScrollArea, QLabel, QStackedWidget
+from PySide6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QScrollArea,
+    QLabel,
+    QStackedWidget,
+    QCheckBox,
+    QHBoxLayout,
+)
 from PySide6.QtCore import Signal, Qt
 
 from ui.preview_panel import PreviewPanel
@@ -15,6 +23,7 @@ class GroupedPhotosView(QWidget):
     
     selection_changed = Signal(str, bool)  # image_path, is_selected
     group_clicked = Signal(list, int, bool, object)  # images, group_number, is_singles, similarity
+    exclude_similar_toggled = Signal(bool)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -29,6 +38,15 @@ class GroupedPhotosView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+
+        controls_layout = QHBoxLayout()
+        controls_layout.setContentsMargins(6, 6, 6, 4)
+        self.exclude_similar_checkbox = QCheckBox("Exclude >=0.98 similar")
+        self.exclude_similar_checkbox.setStyleSheet("font-size: 11px; color: #555;")
+        self.exclude_similar_checkbox.toggled.connect(self.exclude_similar_toggled.emit)
+        controls_layout.addWidget(self.exclude_similar_checkbox)
+        controls_layout.addStretch()
+        layout.addLayout(controls_layout)
         
         # Use QStackedWidget to properly switch between views
         self.stacked_widget = QStackedWidget()
@@ -71,12 +89,23 @@ class GroupedPhotosView(QWidget):
         self.summary_label.setVisible(False)
         layout.addWidget(self.summary_label)
     
-    def set_groups(self, groups: List[List[str]], min_display_size: int = 2, similarities: List[float] = None):
+    def set_groups(
+        self,
+        groups: List[List[str]],
+        min_display_size: int = 2,
+        similarities: List[float] = None,
+        preserve_order: bool = False,
+    ):
         """Set the photo groups to display."""
         self.current_groups = groups
         # Switch to preview panel
         self.stacked_widget.setCurrentIndex(0)
-        self.preview_panel.display_groups(groups, min_display_size, similarities)
+        self.preview_panel.display_groups(
+            groups,
+            min_display_size,
+            similarities,
+            preserve_order=preserve_order,
+        )
     
     def show_processing_message(self, message: str):
         """Show a processing message instead of the preview panel."""

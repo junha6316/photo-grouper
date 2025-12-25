@@ -13,6 +13,14 @@ from PySide6.QtGui import QFont, QKeySequence, QShortcut
 
 from ui.components.grid_image_view import GridImageView
 from ui.components.single_image_view import SingleImageView
+from core.phash import (
+    DEFAULT_MAX_GROUP_SIZE,
+    DEFAULT_PHASH_DISTANCE,
+    group_paths_by_phash,
+)
+
+PHASH_STACK_DISTANCE = DEFAULT_PHASH_DISTANCE
+PHASH_STACK_MAX_GROUP_SIZE = DEFAULT_MAX_GROUP_SIZE
 
 
 class GroupDetailView(QWidget):
@@ -186,6 +194,32 @@ class GroupDetailView(QWidget):
         self.similarity = similarity
         self._rebuild_views()
 
+    def update_cluster_images(
+        self,
+        cluster_images: List[str],
+        similarity: Optional[float] = None,
+        is_singles_group: Optional[bool] = None,
+    ):
+        """Update cluster images while keeping view mode and selection."""
+        current_mode = self.current_view_mode
+        current_image = None
+        if current_mode == "single" and self.single_view and self.cluster_images:
+            index = self.single_view.current_index
+            if 0 <= index < len(self.cluster_images):
+                current_image = self.cluster_images[index]
+
+        self.cluster_images = list(cluster_images)
+        if similarity is not None:
+            self.similarity = similarity
+        if is_singles_group is not None:
+            self.is_singles_group = is_singles_group
+        self._rebuild_views()
+
+        if current_mode == "single" and current_image and self.single_view:
+            if current_image in self.cluster_images:
+                self.set_view_mode("single")
+                self.single_view.go_to_image(self.cluster_images.index(current_image))
+
     def clear(self):
         """Clear the current cluster view."""
         self.cluster_images = []
@@ -211,7 +245,18 @@ class GroupDetailView(QWidget):
             return
 
         # Create new views
-        self.grid_view = GridImageView(self.cluster_images, self, thumbnail_size=180)
+        stack_groups = group_paths_by_phash(
+            self.cluster_images,
+            max_distance=PHASH_STACK_DISTANCE,
+            max_group_size=PHASH_STACK_MAX_GROUP_SIZE,
+        )
+        self.grid_view = GridImageView(
+            self.cluster_images,
+            self,
+            thumbnail_size=180,
+            stack_groups=stack_groups,
+            stack_open_callback=self.open_stack_dialog,
+        )
         self.grid_view.selection_changed.connect(self.on_image_selection_changed)
         self.grid_view_index = self.stacked_widget.addWidget(self.grid_view)
 
@@ -280,9 +325,9 @@ class GroupDetailView(QWidget):
         """Sync selections from grid view to single view."""
         if not self.grid_view or not self.single_view:
             return
-        image_cards = self.grid_view.get_image_cards()
-        for card in image_cards:
-            self.single_view.set_selection(card.image_path, card.is_selected)
+        selected_images = set(self.grid_view.get_selected_images())
+        for image_path in self.cluster_images:
+            self.single_view.set_selection(image_path, image_path in selected_images)
 
     def sync_selections_to_grid_view(self):
         """Sync selections from single view to grid view."""
@@ -405,3 +450,17 @@ class GroupDetailView(QWidget):
 
         self.selected_count = 0
         self.update_selection_ui()
+
+    def open_stack_dialog(self, stack_images: List[str]):
+        """Open a dialog to inspect images inside a stack card."""
+        if not stack_images:
+            return
+        try:
+            from ui.stack_detail_dialog import StackDetailDialog
+            parent = self.main_window if self.main_window else self
+            dialog = StackDetailDialog(stack_images, parent)
+            dialog.exec()
+        except Exception as exc:
+            print(f"Error opening stack detail dialog: {exc}")
+            import traceback
+            traceback.print_exc()

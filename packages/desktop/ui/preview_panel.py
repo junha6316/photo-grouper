@@ -111,8 +111,7 @@ class PreviewThumbnailWidget(QLabel):
                     font-size: 9px;
                 }
             """)
-    
-    
+
 
 class GroupWidget(QFrame):
     """Widget to display a group of similar images."""
@@ -307,7 +306,13 @@ class PreviewPanel(QWidget):
         # Connect scroll event for viewport detection
         self.scroll_area.verticalScrollBar().valueChanged.connect(self._on_scroll)
     
-    def display_groups(self, groups: List[List[str]], min_display_size: int = 2, similarities: List[float] = None):
+    def display_groups(
+        self,
+        groups: List[List[str]],
+        min_display_size: int = 2,
+        similarities: List[float] = None,
+        preserve_order: bool = False,
+    ):
         """
         Display photo groups in the panel.
         
@@ -315,6 +320,7 @@ class PreviewPanel(QWidget):
             groups: List of image groups (includes singles group)
             min_display_size: Minimum group size to display (singles group always shown)
             similarities: List of average similarity scores for each group
+            preserve_order: If True, keep groups in the provided order
         """
         print(f"DEBUG: display_groups called with {len(groups)} groups, min_display_size={min_display_size}")
         for i, group in enumerate(groups):
@@ -343,10 +349,13 @@ class PreviewPanel(QWidget):
                 }
             )
 
-        non_singles = [entry for entry in group_entries if not entry["is_singles"]]
-        singles = [entry for entry in group_entries if entry["is_singles"]]
-        non_singles.sort(key=lambda entry: len(entry["group"]), reverse=True)
-        sorted_entries = non_singles + singles
+        if preserve_order:
+            sorted_entries = group_entries
+        else:
+            non_singles = [entry for entry in group_entries if not entry["is_singles"]]
+            singles = [entry for entry in group_entries if entry["is_singles"]]
+            non_singles.sort(key=lambda entry: len(entry["group"]), reverse=True)
+            sorted_entries = non_singles + singles
 
         groups_to_show = []
         for entry in sorted_entries:

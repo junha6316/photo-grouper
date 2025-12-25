@@ -259,9 +259,9 @@ class SelectedPhotosView(QWidget):
     def sync_selections_to_single_view(self):
         """Sync selections from grid view to single view."""
         if self.grid_view and self.single_view:
-            image_cards = self.grid_view.get_image_cards()
-            for card in image_cards:
-                self.single_view.set_selection(card.image_path, card.is_selected)
+            selected_images = set(self.grid_view.get_selected_images())
+            for image_path in self.selected_images:
+                self.single_view.set_selection(image_path, image_path in selected_images)
     
     def sync_selections_to_grid_view(self):
         """Sync selections from single view to grid view."""
