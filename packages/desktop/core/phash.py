@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections import defaultdict
-from typing import Dict, List, Optional
 import threading
+from collections import defaultdict
+from typing import Callable, Dict, Iterable, List, Optional
 
 import numpy as np
 from PIL import Image
@@ -111,6 +111,35 @@ def get_phash(image_path: str) -> Optional[int]:
     with _CACHE_LOCK:
         _PHASH_CACHE[image_path] = phash
     return phash
+
+
+def preload_phashes(
+    image_paths: Iterable[str],
+    progress_callback: Optional[Callable[[int, int, str], None]] = None,
+) -> None:
+    """
+    Precompute and cache pHashes for a collection of image paths.
+
+    Args:
+        image_paths: Iterable of image file paths to hash.
+        progress_callback: Optional callback receiving (current_idx, total, path).
+    """
+    if not image_paths:
+        return
+
+    paths = image_paths if isinstance(image_paths, list) else list(image_paths)
+    total = len(paths)
+    if total == 0:
+        return
+
+    for idx, path in enumerate(paths, 1):
+        get_phash(path)
+        if progress_callback:
+            try:
+                progress_callback(idx, total, path)
+            except Exception:
+                # Never let a callback failure break caching
+                pass
 
 
 def hamming_distance(a: int, b: int) -> int:

@@ -11,7 +11,7 @@ from typing import List, Dict
 import numpy as np
 
 from core.scanner import ImageScanner
-
+from core.phash import preload_phashes
 from core.grouper import PhotoGrouper
 from ui.views import AllPhotosView, GroupedPhotosView, GroupDetailView, SelectedTray
 
@@ -181,6 +181,21 @@ class ProcessingThread(QThread):
 
             # Emit scanned images immediately so UI can start displaying them
             self.images_scanned.emit(image_paths, len(filtered_out))
+
+            # Precompute pHashes in the background so stack previews stay responsive later
+            phash_start = 18
+            phash_end = 19
+
+            def phash_progress(current_idx: int, total: int, _path: str):
+                # Throttle updates to avoid excessive signals on large sets
+                step = max(1, total // 50)
+                if (current_idx % step) and current_idx != total:
+                    return
+                progress = phash_start + int((phash_end - phash_start) * current_idx / max(1, total))
+                self.progress_updated.emit(progress, f"Computing pHashes {current_idx}/{total}")
+
+            self.progress_updated.emit(phash_start, "Computing pHashes for stack previews...")
+            preload_phashes(image_paths, progress_callback=phash_progress)
             
             # Step 2: Initialize embedder and fit PCA
             self.progress_updated.emit(19, "Initializing embedder...")
